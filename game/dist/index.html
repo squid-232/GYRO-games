@@ -43,6 +43,10 @@
     <div class="title-kicker" data-text="SKYSTRIKE" aria-hidden="true">SKYSTRIKE</div><h1 class="combat-title" aria-label="苍穹突击"><span class="title-steel" aria-hidden="true" data-text="苍穹">苍穹</span><span class="title-ember" aria-hidden="true" data-text="突击">突击</span></h1>
     <div class="mission-rule"><span id="missionType">海岛空域 / 空中拦截</span><b id="areaCode">01—AO</b></div>
     <div class="map-select" role="group" aria-label="选择战场"><button id="mapIsland" class="map-option" aria-pressed="false"><span class="map-symbol island-symbol" aria-hidden="true"></span><span><small>01 / MARITIME</small>群岛战区</span></button><button id="mapSpace" class="map-option" aria-pressed="true"><span class="map-symbol orbit-symbol" aria-hidden="true"></span><span><small>02 / ORBITAL</small>轨道禁区</span></button></div>
+    <div id="islandRegionPanel" class="island-region hidden">
+      <img id="islandMinimap" width="64" height="64" alt="当前海岛地形缩略图">
+      <div><label for="islandRegion">区域部署 <span>ISLAND SECTOR</span></label><select id="islandRegion" aria-label="选择海岛区域"></select><small id="islandRegionDescription"></small></div>
+    </div>
     <p id="introText">低空突入群岛，突破敌方封锁。<br>沿航线收集补给，规避礁柱，清除空中威胁。</p>
     <div class="features"><span><b>01</b> 收集摩拉</span><span><b>02</b> 规避障碍</span><span><b>03</b> Q 跟踪导弹</span></div>
     <button id="start" class="primary" disabled>正在装载战机 <span>↗</span></button>

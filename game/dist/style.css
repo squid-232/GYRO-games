@@ -89,3 +89,13 @@ body[data-map=space] .theater-label{background:#0c1426b3}.intro .features{margin
 .render-stats[data-low=true]{color:#f2ac64}
 @media(max-width:1050px){.graphics-control{font-size:0}}
 @media(max-width:700px){.render-stats{display:none}.graphics-control select{font-size:10px;padding:7px 3px;max-width:54px}.top-actions{gap:3px}}
+
+/* Imported terrain selection uses the same restrained tactical typography. */
+.island-region{display:flex;gap:12px;align-items:center;border:1px solid #a5b6a329;border-left:2px solid #b6bf91;background:#0e1718aa;padding:9px 12px;margin:12px 0}
+.island-region.hidden{display:none}
+.island-region img{width:62px;height:62px;object-fit:cover;filter:saturate(.65) contrast(1.05);border:1px solid #a5b6a329}
+.island-region>div{flex:1;min-width:0}.island-region label{display:flex;justify-content:space-between;color:#abb4a8;font-size:10px;letter-spacing:1.5px}
+.island-region label span{font-size:9px;opacity:.65}.island-region select{width:100%;padding:5px 0;background:transparent;border:0;color:#edf0d9;font:inherit;font-size:15px;font-weight:600;cursor:pointer;color-scheme:dark}
+.island-region select option{background:#182123;color:#edf0d9}.island-region select:focus-visible{outline:1px solid #c5d19e;outline-offset:2px}
+.island-region small{display:block;font-size:10px;color:#a6b2b0;letter-spacing:.8px}.island-region select:disabled{opacity:.45;cursor:wait}
+@media(max-width:600px){.island-region{margin:8px 0;padding:7px 10px}.island-region img{width:48px;height:48px}.island-region label span{display:none}}

@@ -10,6 +10,7 @@ import { createSpaceplane, updateSpaceplane } from './spaceplane-model.js';
 import { createEnemyAircraft, ENEMY_EXTENTS } from './enemy-model.js';
 import { createEnemyMissile, createPlayerMissile, animateEnemyMissile } from './missile-model.js';
 import { createIslandMap, createSeaStack } from './island-map.js';
+import {ISLAND_REGIONS} from './notion-islands.js';
 import { createMoraCoin } from './coin-model.js';
 import { createEnemyExplosions } from './explosion-effect.js';
 import { createSpaceMap, createOrbitalObstacle, createOrbitalGate, ringIntersects } from './space-map.js';
@@ -63,6 +64,14 @@ window.addEventListener('pagehide',()=>cannon.dispose(),{once:true});
 const particles=createParticleSystem(world,geo.particle);
 window.addEventListener('pagehide',()=>particles.dispose(),{once:true});
 const islandMap=createIslandMap(scene);
+window.addEventListener('pagehide',()=>islandMap.dispose(),{once:true});
+for(const region of ISLAND_REGIONS){const option=document.createElement('option');option.value=region.id;option.textContent=region.name;$('islandRegion').append(option);}
+function updateIslandRegionUI(){
+ const region=ISLAND_REGIONS.find(r=>r.id===islandMap.region);
+ $('islandRegion').value=region.id;$('islandRegionDescription').textContent=region.description;
+ $('islandMinimap').src=`./assets/notion-islands/${region.id}/minimap.webp`;
+ if(selectedMap==='island'){$('theaterName').textContent=region.name;$('missionLocation').textContent=`MARITIME / ${region.name}`;}
+}
 let spaceMap,activeMap=islandMap,selectedMap='space',islandAircraft,spaceAircraft,waveIndex=0,battlefieldPreparing=false;
 try{const saved=localStorage.getItem('gyro-skystrike-map');if(saved==='island'||saved==='space')selectedMap=saved;}catch{}
 function selectMap(kind){
@@ -90,6 +99,7 @@ function selectMap(kind){
  sun.color.setHex(orbital?0xffebd0:0xffe8c4);sun.intensity=orbital?3.2:3.3;sun.position.set(orbital?-78:-32,orbital?48:38,orbital?39:-45);
  rim.color.setHex(orbital?0x7fa4c4:0xb5e4ff);rim.intensity=orbital?.85:1.8;
  document.body.dataset.map=selectedMap;
+ $('islandRegionPanel').classList.toggle('hidden',orbital);
  $('mapIsland').setAttribute('aria-pressed',String(!orbital));$('mapSpace').setAttribute('aria-pressed',String(orbital));
  $('missionLocation').textContent=orbital?'ORBITAL EXCLUSION / 轨道禁区':'ARCHIPELAGO / 群岛战区';
  $('operationLabel').textContent=orbital?'OPERATION 02 / 轨道':'OPERATION 01 / 群岛';
@@ -99,6 +109,7 @@ function selectMap(kind){
  $('heightLabel').textContent=orbital?'OFFSET / 航道高度':'ALT / 高度';$('heightUnit').textContent=orbital?'REL. METERS':'METERS';
  $('tacticalRadar').setAttribute('aria-label',orbital?'前方敌机、残骸、环框与补给位置':'前方敌机、礁柱与补给位置');
  $('radarObstacleLabel').textContent=orbital?'残骸 / 环框':'礁柱';$('scene').setAttribute('aria-label',orbital?'3D 轨道禁区太空空战场景':'3D 海岛空战场景');
+ updateIslandRegionUI();
  try{localStorage.setItem('gyro-skystrike-map',selectedMap);}catch{}
 }
 async function chooseBattlefield(kind){
@@ -106,6 +117,11 @@ async function chooseBattlefield(kind){
  selectMap(kind);await prepareCurrentBattlefield();
 }
 $('mapIsland').onclick=()=>chooseBattlefield('island');$('mapSpace').onclick=()=>chooseBattlefield('space');
+$('islandRegion').onchange=async()=>{
+ if(mode!=='menu'||battlefieldPreparing)return;
+ const id=$('islandRegion').value;
+ await prepareCurrentBattlefield(()=>islandMap.setRegion(id));updateIslandRegionUI();
+};
 selectMap(selectedMap);
 
 let audio;function tone(freq,dur,type='sine',vol=.025){if(muted)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,audio.currentTime);o.frequency.exponentialRampToValueAtTime(Math.max(30,freq*.45),audio.currentTime+dur);g.gain.setValueAtTime(vol,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+dur);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+dur);}catch{}}
@@ -380,22 +396,26 @@ async function prepareCombatRendering(){
  aircraft.position.set(0,5,7);aircraft.scale.setScalar(.24);
  await prepareCurrentBattlefield();
 }
-async function prepareCurrentBattlefield(){
+async function prepareCurrentBattlefield(changeRegion){
  battlefieldPreparing=true;$('start').disabled=true;$('renderQuality').disabled=true;
- $('mapIsland').disabled=$('mapSpace').disabled=true;
+ $('mapIsland').disabled=$('mapSpace').disabled=$('islandRegion').disabled=true;
  $('start').innerHTML='正在准备战场 <span>↗</span>';
  // 只预热当前战场；切换地图时在大厅准备，避免首次进入同时编译两套光照。
  try{
-  if(activeMap.ready)await activeMap.ready;
+  if(changeRegion)await changeRegion();
+  await activeMap.ready;
+  $('loadError').classList.add('hidden');
   updateAircraftShadows();renderer.render(scene,camera);
   await renderer.compileAsync(scene,camera);
   if(selectedMap==='island')await activeMap.renderReflection(renderer,scene,camera,performance.now(),true);
+ }catch(error){
+  $('loadError').classList.remove('hidden');$('loadError').textContent=`战场准备失败：${error.message}。可重新选择区域重试。`;
  }finally{
-  battlefieldPreparing=false;$('renderQuality').disabled=false;$('mapIsland').disabled=$('mapSpace').disabled=false;
-  if(mode==='menu'){$('start').disabled=false;$('start').innerHTML='开始出击 <span>↗</span>';}
+  battlefieldPreparing=false;$('renderQuality').disabled=false;$('mapIsland').disabled=$('mapSpace').disabled=$('islandRegion').disabled=false;
+  if(mode==='menu'){$('start').disabled=selectedMap==='island'&&!islandMap.loaded;$('start').innerHTML=$('start').disabled?'资源尚未就绪':'开始出击 <span>↗</span>';}
  }
 }
-async function boot(){try{const response=await fetch('assets/airplane-f22.glb');if(!response.ok)throw Error(`HTTP ${response.status}`);islandAircraft=parseAircraft(await response.arrayBuffer());spaceAircraft=createSpaceplane();aircraft=new T.Group();aircraft.name='Player aircraft carrier';aircraft.add(islandAircraft,spaceAircraft);scene.add(aircraft);islandAircraft.visible=selectedMap==='island';spaceAircraft.visible=selectedMap==='space';updateSpaceplane(spaceAircraft,0,false);await prepareCombatRendering();aircraft.scale.setScalar(.85);mode='menu';$('start').disabled=false;$('start').innerHTML='开始出击 <span>↗</span>';animate();}catch(e){$('loadError').classList.remove('hidden');$('loadError').textContent='模型加载失败。请通过本地 HTTP 服务打开游戏，并确认 assets/airplane-f22.glb 存在。'+e.message;}}
+async function boot(){try{const response=await fetch('assets/airplane-f22.glb');if(!response.ok)throw Error(`HTTP ${response.status}`);islandAircraft=parseAircraft(await response.arrayBuffer());spaceAircraft=createSpaceplane();aircraft=new T.Group();aircraft.name='Player aircraft carrier';aircraft.add(islandAircraft,spaceAircraft);scene.add(aircraft);islandAircraft.visible=selectedMap==='island';spaceAircraft.visible=selectedMap==='space';updateSpaceplane(spaceAircraft,0,false);await prepareCombatRendering();aircraft.scale.setScalar(.85);mode='menu';$('start').disabled=selectedMap==='island'&&!islandMap.loaded;$('start').innerHTML=$('start').disabled?'资源尚未就绪':'开始出击 <span>↗</span>';animate();}catch(e){$('loadError').classList.remove('hidden');$('loadError').textContent='模型加载失败。请通过本地 HTTP 服务打开游戏，并确认 assets/airplane-f22.glb 存在。'+e.message;}}
 let last=performance.now(),menuTime=0;
 function animate(now=performance.now()){
  requestAnimationFrame(animate);
