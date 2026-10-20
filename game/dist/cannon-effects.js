@@ -76,10 +76,10 @@ export function createCannonEffects(parent) {
     mesh.position.set(side*.62,0,-2);root.add(mesh);return mesh;
   });
   // 飞行中的普通炮弹统一实例化绘制；每种弹道最多一次绘制。
-  const capacity=64,roundRoot=new T.Group();roundRoot.name='Batched cannon rounds';parent.add(roundRoot);
+  const capacity=64,roundRoot=new T.Group();roundRoot.name='Batched cannon rounds';roundRoot.userData.routeBatch=true;parent.add(roundRoot);
   const rounds={fire:new T.InstancedMesh(tracerGeometry,material,capacity),laser:new T.InstancedMesh(laserGeometry,laserMaterial,capacity)};
   for(const mesh of Object.values(rounds)){mesh.count=0;mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);roundRoot.add(mesh);}
-  const localMuzzle=new T.Vector3(),duration=.075;
+  const localMuzzle=new T.Vector3(),roundPose=new T.Object3D(),duration=.075;
   let remaining=0,firedSinceRender=false,changed=false;
   function muzzlePosition(side,player,attitude,out) {
     localMuzzle.set(side*.62,0,-2).applyQuaternion(attitude);
@@ -95,12 +95,12 @@ export function createCannonEffects(parent) {
   }
   function trigger(){remaining=duration;firedSinceRender=true;changed=true;}
   function update(dt){uniforms.time.value+=dt;remaining=Math.max(0,remaining-dt);changed=true;}
-  function flush(player,attitude,enabled=true,shots=[]) {
+  function flush(player,attitude,enabled=true,shots=[],project=null) {
     const counts={fire:0,laser:0};
     for(const shot of shots){
       const type=shot.mesh.userData.roundType;
       if(!rounds[type]||counts[type]>=capacity)continue;
-      shot.mesh.updateMatrix();rounds[type].setMatrixAt(counts[type]++,shot.mesh.matrix);
+      roundPose.position.copy(shot.mesh.position);roundPose.quaternion.copy(shot.mesh.quaternion);roundPose.scale.copy(shot.mesh.scale);if(project)project(roundPose);roundPose.updateMatrix();rounds[type].setMatrixAt(counts[type]++,roundPose.matrix);
     }
     for(const [type,mesh] of Object.entries(rounds)){mesh.count=counts[type];if(mesh.count)mesh.instanceMatrix.needsUpdate=true;}
     // 低帧率的追赶子步中即使已完成闪焰，也至少在本画面呈现一次射击提示。

@@ -21,7 +21,7 @@ try{renderer=new T.WebGLRenderer({canvas:$('scene'),antialias:true,powerPreferen
 const graphics=new GraphicsSettings(renderer,devicePixelRatio);
 renderer.debug.checkShaderErrors=new URLSearchParams(location.search).has('debug-gpu');
 renderer.setClearColor(0x72939c);renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.shadowMap.autoUpdate=false;
-const scene=new T.Scene();scene.fog=new T.FogExp2(0x78979e,.005);const camera=new T.PerspectiveCamera(53,innerWidth/innerHeight,.1,700);
+const scene=new T.Scene();scene.fog=new T.FogExp2(0x78979e,.00165);const camera=new T.PerspectiveCamera(53,innerWidth/innerHeight,.1,2200);
 const hemisphere=new T.HemisphereLight(0xc2deeb,0x263b3c,2.3);scene.add(hemisphere);const sun=new T.DirectionalLight(0xffe8c4,3.3);sun.position.set(-32,38,-45);scene.add(sun);const rim=new T.DirectionalLight(0xb5e4ff,1.8);rim.position.set(15,8,15);scene.add(rim);
 // One tight shadow map follows the player. Only the aircraft casts/receives it;
 // the island scene and its reflection do not add duplicate shadow-map renders.
@@ -75,9 +75,8 @@ function updateIslandRegionUI(){
 let spaceMap,activeMap=islandMap,selectedMap='space',islandAircraft,spaceAircraft,waveIndex=0,battlefieldPreparing=false;
 try{const saved=localStorage.getItem('gyro-skystrike-map');if(saved==='island'||saved==='space')selectedMap=saved;}catch{}
 const terrainFlight=createTerrainFlight(islandMap,world,camera,{
- onEnter:name=>notice(`${name} · 飞越航段，操控战机穿过浅绿色导航环`),
- onRing:()=>{score+=150;tone(1500,.15);particleBurst(new T.Vector3(player.x,player.y,player.z),0xc8e8c3,9);},
- onFinish:hits=>{if(hits===3){score+=300;notice('完美飞越 · 额外 +300');}else notice(`飞越完成 · 导航环 ${hits}/3`);}
+ onEnter:name=>notice(`${name} · 航线转入，沿金币方向穿行`),
+ onFinish:()=>notice('冲出山口 · 返回开阔海域')
 });
 window.addEventListener('pagehide',()=>terrainFlight.dispose(),{once:true});
 function selectMap(kind){
@@ -99,7 +98,7 @@ function selectMap(kind){
  $('aircraftNumber').textContent=orbital?'现役载具 / 02':'现役载具 / 01';
  $('islandAircraftDiagram').style.display=orbital?'none':'';
  $('spaceAircraftDiagram').style.display=orbital?'':'none';
- scene.fog=orbital?null:new T.FogExp2(0x78979e,.005);
+ scene.fog=orbital?null:new T.FogExp2(0x78979e,.00165);
  renderer.setClearColor(orbital?0x030610:0x72939c);renderer.toneMappingExposure=orbital?1.08:1.12;
  hemisphere.color.setHex(orbital?0xa2b8d3:0xc2deeb);hemisphere.groundColor.setHex(orbital?0x080e28:0x263b3c);hemisphere.intensity=orbital?.7:2.3;
  sun.color.setHex(orbital?0xffebd0:0xffe8c4);sun.intensity=orbital?3.2:3.3;sun.position.set(orbital?-78:-32,orbital?48:38,orbital?39:-45);
@@ -109,7 +108,7 @@ function selectMap(kind){
  $('missionLocation').textContent=orbital?'ORBITAL EXCLUSION / 轨道禁区':'ARCHIPELAGO / 群岛战区';
  $('operationLabel').textContent=orbital?'OPERATION 02 / 轨道':'OPERATION 01 / 群岛';
  $('missionType').textContent=orbital?'近地轨道 / 残骸突围':'海岛空域 / 空中拦截';$('areaCode').textContent=orbital?'02—AO':'01—AO';
- $('introText').innerHTML=orbital?'驾驶玄女空天战机，突破轨道封锁。<br>避开小行星，穿过蓝色环框，迎击敌机。':'掠海突围，爬升飞越海岛。<br>穿过导航环领取奖励，迎击空中目标。';
+ $('introText').innerHTML=orbital?'驾驶玄女空天战机，突破轨道封锁。<br>避开小行星，穿过蓝色环框，迎击敌机。':'沿海岸转入群山，穿越高耸峡谷。<br>跟随金币航线，躲避障碍，迎击敌机。';
  $('theaterName').textContent=orbital?'轨道禁区':'群岛战区';$('theaterEnglish').textContent=orbital?'ORBITAL INTERDICTION':'MARITIME INTERDICTION';$('theaterCode').textContent=orbital?'AO / 02':'AO / 01';
  $('heightLabel').textContent=orbital?'OFFSET / 航道高度':'ALT / 高度';$('heightUnit').textContent=orbital?'REL. METERS':'METERS';
  $('tacticalRadar').setAttribute('aria-label',orbital?'前方敌机、残骸、环框与补给位置':'前方敌机、礁柱与补给位置');
@@ -154,7 +153,7 @@ function createMissileLockMarker(){
  const geometry=new T.BufferGeometry();
  geometry.setAttribute('position',new T.Float32BufferAttribute(points,3));
  const marker=new T.LineSegments(geometry,new T.LineBasicMaterial({color:0xa9efce,transparent:true,opacity:.9,depthTest:false,depthWrite:false,toneMapped:false}));
- marker.name='Tracking missile target';marker.renderOrder=3;marker.visible=false;world.add(marker);
+ marker.name='Tracking missile target';marker.userData.routeBillboard=true;marker.renderOrder=3;marker.visible=false;world.add(marker);
  return marker;
 }
 function updateMissileHUD(){
@@ -290,7 +289,7 @@ function updateTrackingMissile(s,dt){
  return false;
 }
 function clearList(list){if(list===effects){enemyExplosions.clear();particles.clear();cannon.clear();}for(const o of list){world.remove(o.mesh);if(o.ownedMaterial)o.mesh.material.dispose();if(o.ownedEdges){o.ownedEdges.geometry.dispose();o.ownedEdges.material.dispose();}}list.length=0;}
-function reset(){if(!permitFlight())return;resetMissileSkill();for(const list of [objects,shots,hostile,effects])clearList(list);hp=5;score=coins=kills=distance=elapsed=0;activeMap.reset();terrainFlight.reset();waveIndex=0;level=1;speed=26;invuln=2;spawnTimer=.8;shotTimer=0;shake=0;player.x=0;player.y=5;keys.clear();touch.x=touch.y=0;touch.fire=false;mode='playing';document.body.classList.add('playing');$('overlay').classList.add('hidden');$('pauseOverlay').classList.add('hidden');$('endOverlay').classList.add('hidden');$('pause').disabled=false;aircraft.visible=true;aircraft.scale.setScalar(.24);aircraft.rotation.set(0,0,0);camera.position.set(0,11,22);$('hitflash').style.opacity=0;for(let i=0;i<7;i++)addCoin(Math.sin(i*.4)*.5,5,-28-i*3);addRock(-6,5,-57,1.8);addEnemy(0,5,-90);if(selectedMap==='space')addGate(0,6.5,-150);notice(selectedMap==='space'?'轨道禁区 · 穿越蓝色环框，避开残骸':'进入群岛战区 · 跟随航线飞越海岛，穿环得分');updateHUD();tone(600,.2);}
+function reset(){if(!permitFlight())return;resetMissileSkill();for(const list of [objects,shots,hostile,effects])clearList(list);hp=5;score=coins=kills=distance=elapsed=0;activeMap.reset();terrainFlight.reset();waveIndex=0;level=1;speed=26;invuln=2;spawnTimer=.8;shotTimer=0;shake=0;player.x=0;player.y=5;keys.clear();touch.x=touch.y=0;touch.fire=false;mode='playing';document.body.classList.add('playing');$('overlay').classList.add('hidden');$('pauseOverlay').classList.add('hidden');$('endOverlay').classList.add('hidden');$('pause').disabled=false;aircraft.visible=true;aircraft.scale.setScalar(.24);aircraft.rotation.set(0,0,0);camera.position.set(0,11,22);$('hitflash').style.opacity=0;for(let i=0;i<7;i++)addCoin(Math.sin(i*.4)*.5,5,-28-i*3);addRock(-6,5,-57,1.8);addEnemy(0,5,-90);if(selectedMap==='space')addGate(0,6.5,-150);notice(selectedMap==='space'?'轨道禁区 · 穿越蓝色环框，避开残骸':'进入群岛战区 · 沿金币航线转入峡谷');updateHUD();tone(600,.2);}
 let lastHUDAt=-Infinity;
 function updateHUD(now=-Infinity){if(Number.isFinite(now)&&now-lastHUDAt<100)return;lastHUDAt=now;$('score').textContent=String(Math.floor(score)).padStart(6,'0');$('coins').textContent=coins;[...$('health').children].forEach((e,i)=>e.classList.toggle('empty',i>=hp));$('sector').textContent=String(level).padStart(2,'0');$('speed').textContent=`${Math.round(speed*27.7)} KM/H`;$('alt').textContent=Math.round(selectedMap==='space'?player.y*10:1600+(player.y+terrainFlight.state.y)*160);}
 function end(){mode='over';document.body.classList.remove('playing');$('pause').disabled=true;const newBest=score>best;best=Math.max(best,Math.floor(score));try{localStorage.setItem('gyro-skystrike-best',best);}catch{}$('best').textContent=String(best).padStart(6,'0');$('report').innerHTML=`任务得分 <b>${Math.floor(score)}</b><br>拾取摩拉 <b>${coins}</b><br>击毁目标 <b>${kills}</b><br>飞行距离 <b>${(distance/1000).toFixed(2)} km</b><br>${newBest?'新纪录':'历史最佳'} <b>${best}</b>`;$('endOverlay').classList.remove('hidden');tone(100,.6,'sawtooth',.045);}
@@ -315,7 +314,7 @@ function toggleFire(){autoFire=!autoFire;$('fireMode').innerHTML=`${autoFire?'�
 function particleBurst(pos,color,count=16){particles.burst(pos,color,count);}
 function damage(){if(invuln>0||mode!=='playing')return;hp--;invuln=1.7;shake=.4;tone(80,.25,'sawtooth',.08);particleBurst(new T.Vector3(player.x,player.y,player.z),0xffa765,10);notice(hp<=2?'机体受损 · 注意闪避':'受到撞击 · 护盾恢复中');if(hp<=0){end();updateHUD();}}
 function addCoin(x,y,z){const mesh=createMoraCoin();mesh.position.set(x,y,z);world.add(mesh);objects.push({type:'coin',mesh,r:.9});}
-function addRock(x,y,z,r=1.8){if(selectedMap==='island'&&!terrainFlight.seaObstacles)return;const obstacle=selectedMap==='space'?createOrbitalObstacle(x,y,z,r,waveIndex):{type:'rock',...createSeaStack(x,y,z,r)};if(selectedMap==='island')Object.assign(obstacle,{anchorX:x+world.position.x,anchorY:y+world.position.y,anchorTop:obstacle.top+world.position.y,anchorBottom:obstacle.bottom+world.position.y});world.add(obstacle.mesh);objects.push(obstacle);}
+function addRock(x,y,z,r=1.8){if(selectedMap==='island'&&!terrainFlight.seaObstacles)return;const obstacle=selectedMap==='space'?createOrbitalObstacle(x,y,z,r,waveIndex):{type:'rock',...createSeaStack(x,y,z,r)};world.add(obstacle.mesh);objects.push(obstacle);}
 function addGate(x,y,z){const gate=createOrbitalGate(x,y,z);world.add(gate.mesh);objects.push(gate);}
 function shotHitsObject(o,shot){
  const p=o.mesh.position,x=shot.mesh.position.x,y=shot.mesh.position.y;
@@ -338,6 +337,13 @@ function launchEnemyMissile(enemy){
  hostile.push({mesh,vel,life:5,age:0,flamePhase:elapsed*7+side});
 }
 function spawn(){waveIndex++;
+ if(selectedMap==='island'&&terrainFlight.active){
+  const lane=terrainFlight.transition?0:(waveIndex%3-1)*4,y=5.5;
+  for(let i=0;i<9;i++)addCoin(lane+Math.sin(i*.32)*.6,y,-75-i*4.5);
+  if(!terrainFlight.transition&&waveIndex%2===0)addEnemy(-lane,6.5,-145);
+  if(terrainFlight.seaObstacles&&waveIndex%2===0)addRock(lane===0?6:-lane,5,-112,1.6);
+  return;
+ }
  if(selectedMap==='space'&&waveIndex%3===2){
   const x=waveIndex%2?3:-3,y=6.5;addGate(x,y,-112);
   for(let i=0;i<7;i++)addCoin(x,y,-95-i*4);
@@ -365,7 +371,7 @@ function advanceGame(dt){
  if(mode!=='playing'||(gyro.selected&&!gyro.fresh))return 0;
  return advanceFrame(dt,step=>tick(step,motion));
 }
-function tick(dt,motion=gyro.sample(dt)){if(mode!=='playing'||(gyro.selected&&!gyro.fresh))return false;elapsed+=dt;distance+=speed*dt;score+=dt*8;const next=1+Math.floor(elapsed/25);if(next!==level){level=next;notice(`进入第 ${level} 战区 · 威胁提升`);tone(900,.3);}speed=Math.min(48,26+(level-1)*3);invuln=Math.max(0,invuln-dt);shake=Math.max(0,shake-dt);$('hitflash').style.opacity=shake>0?shake*1.5:0;
+function tick(dt,motion=gyro.sample(dt)){if(mode!=='playing'||(gyro.selected&&!gyro.fresh))return false;elapsed+=dt;const travelStep=terrainFlight.advance(speed,dt,selectedMap==='island');distance+=travelStep;score+=dt*8;const next=1+Math.floor(elapsed/25);if(next!==level){level=next;notice(`进入第 ${level} 战区 · 威胁提升`);tone(900,.3);}speed=Math.min(48,26+(level-1)*3);invuln=Math.max(0,invuln-dt);shake=Math.max(0,shake-dt);$('hitflash').style.opacity=shake>0?shake*1.5:0;
  const skill=missileSkillState(),wasCooling=skill.cooldown>0;
  skill.cooldown=Math.max(0,skill.cooldown-dt);
  if(wasCooling&&skill.cooldown===0)notice('跟踪导弹已就绪 · 按 Q 或点击释放');
@@ -373,21 +379,21 @@ function tick(dt,motion=gyro.sample(dt)){if(mode!=='playing'||(gyro.selected&&!g
  const dy=motion?motion.y:(keys.has('KeyW')||keys.has('ArrowUp')?1:0)-(keys.has('KeyS')||keys.has('ArrowDown')?1:0)+touch.y;
  player.x=clamp(player.x+clamp(dx,-1,1)*12*dt,-range.x,range.x);player.y=clamp(player.y+clamp(dy,-1,1)*9*dt,range.yMin,range.yMax);
  activeMap.update(distance,elapsed);
- const flight=terrainFlight.update(distance,player,selectedMap==='island');
- for(const o of objects)if(o.type==='rock'){o.mesh.position.x=o.anchorX-flight.x;o.mesh.position.y=o.anchorY-flight.y;o.top=o.anchorTop-flight.y;o.bottom=o.anchorBottom-flight.y;}
- aircraft.position.set(player.x+flight.x,player.y+flight.y,player.z);aircraft.rotation.z=T.MathUtils.damp(aircraft.rotation.z,-dx*.32+flight.bank,8,dt);aircraft.rotation.x=T.MathUtils.damp(aircraft.rotation.x,dy*.12+flight.climb,8,dt);aircraft.visible=invuln>0?Math.floor(invuln*12)%2===0:true;
+ const flight=terrainFlight.update(distance,player,selectedMap==='island',speed);
+ if(selectedMap==='island'&&terrainFlight.groundHit(player,1.4)){damage();player.x*=.92;player.y=Math.min(range.yMax,player.y+dt*7);if(mode==='over')return;}
+ aircraft.position.set(player.x,player.y,player.z);aircraft.rotation.z=T.MathUtils.damp(aircraft.rotation.z,-dx*.32+flight.bank,8,dt);aircraft.rotation.x=T.MathUtils.damp(aircraft.rotation.x,dy*.12,8,dt);aircraft.visible=invuln>0?Math.floor(invuln*12)%2===0:true;
  terrainFlight.aimCamera(dt,player);if(shake){camera.position.x+=(Math.random()-.5)*shake;camera.position.y+=(Math.random()-.5)*shake;}
  spawnTimer-=dt;if(spawnTimer<=0){spawn();spawnTimer=Math.max(1.6,3.4-level*.15);}shotTimer-=dt;if((autoFire||keys.has('Space')||touch.fire)&&shotTimer<=0){fire();shotTimer=.14;}
- for(let i=shots.length-1;i>=0;i--){const s=shots[i];if(s.kind==='tracking')continue;s.prevZ=s.mesh.position.z;s.mesh.position.z-=115*dt;s.life-=dt;let hit=false;for(let j=objects.length-1;j>=0;j--){const o=objects[j];if(o.type==='coin')continue;const p=o.mesh.position;if(shotHitsObject(o,s)){hit=true;if(o.type==='enemy')damageEnemy(o,1,s.mesh.position);else particleBurst(s.mesh.position,0xffb66c,2);break;}}if(hit||s.life<=0){world.remove(s.mesh);shots.splice(i,1);}}
- for(let i=objects.length-1;i>=0;i--){const o=objects[i];const p=o.mesh.position;p.z+=speed*dt;if(o.type==='coin'){o.mesh.rotation.y+=dt*2.8;if(Math.hypot(p.x-player.x,p.y-player.y)<1.3&&Math.abs(p.z-player.z)<1.8){coins++;score+=25;tone(1300,.09,'sine',.025);particleBurst(p,0xffd16b,5);removeObject(i);continue;}}else{if(o.type==='asteroid'){o.mesh.rotation.x+=dt*o.spin;o.mesh.rotation.z+=dt*o.spin*.7;}if(o.type==='enemy'){p.x=clamp(o.baseX+Math.sin(elapsed*1.2+o.phase)*(elapsed<8?.35:1.8),-10,10);o.mesh.rotation.z=Math.cos(elapsed*1.2+o.phase)*.16;o.fire-=dt;if(o.fire<0&&p.z<-8&&p.z>-85){launchEnemyMissile(o);o.fire=Math.max(.9,2.5-level*.12);}}if(playerHitsObject(o)){damage();if(mode==='over')return;}}if(p.z>25)removeObject(i);}
+ for(let i=shots.length-1;i>=0;i--){const s=shots[i];if(s.kind==='tracking')continue;s.prevZ=s.mesh.position.z;s.mesh.position.z-=115*dt;s.life-=dt;let hit=terrainFlight.groundHit(s.mesh.position);for(let j=objects.length-1;j>=0;j--){const o=objects[j];if(hit||o.type==='coin')continue;const p=o.mesh.position;if(shotHitsObject(o,s)){hit=true;if(o.type==='enemy')damageEnemy(o,1,s.mesh.position);else particleBurst(s.mesh.position,0xffb66c,2);break;}}if(hit||s.life<=0){world.remove(s.mesh);shots.splice(i,1);}}
+ for(let i=objects.length-1;i>=0;i--){const o=objects[i];const p=o.mesh.position;p.z+=travelStep;if(o.type==='coin'){o.mesh.rotation.y+=dt*2.8;if(Math.hypot(p.x-player.x,p.y-player.y)<1.3&&Math.abs(p.z-player.z)<1.8){coins++;score+=25;tone(1300,.09,'sine',.025);particleBurst(p,0xffd16b,5);removeObject(i);continue;}}else{if(o.type==='asteroid'){o.mesh.rotation.x+=dt*o.spin;o.mesh.rotation.z+=dt*o.spin*.7;}if(o.type==='enemy'){p.x=clamp(o.baseX+Math.sin(elapsed*1.2+o.phase)*(elapsed<8?.35:1.8),-10,10);o.mesh.rotation.z=Math.cos(elapsed*1.2+o.phase)*.16;o.fire-=dt;if(o.fire<0&&p.z<-8&&p.z>-85&&!(selectedMap==='island'&&terrainFlight.transition)){launchEnemyMissile(o);o.fire=Math.max(.9,2.5-level*.12);}}if(playerHitsObject(o)){damage();if(mode==='over')return;}}if(p.z>25)removeObject(i);}
  for(let i=shots.length-1;i>=0;i--){
   const s=shots[i];if(s.kind!=='tracking')continue;
-  if(updateTrackingMissile(s,dt)){world.remove(s.mesh);shots.splice(i,1);}
+  if(updateTrackingMissile(s,dt)||terrainFlight.groundHit(s.mesh.position)){world.remove(s.mesh);shots.splice(i,1);}
  }
- for(let i=hostile.length-1;i>=0;i--){const b=hostile[i];b.mesh.position.addScaledVector(b.vel,dt);b.life-=dt;b.age+=dt;animateEnemyMissile(b.mesh,b.age,b.flamePhase);if(b.mesh.position.distanceTo(new T.Vector3(player.x,player.y,player.z))<.9){damage();b.life=0;if(mode==='over')return;}if(b.life<=0||b.mesh.position.z>30){world.remove(b.mesh);hostile.splice(i,1);}}
+ for(let i=hostile.length-1;i>=0;i--){const b=hostile[i];b.mesh.position.addScaledVector(b.vel,dt);b.life-=dt;if(terrainFlight.groundHit(b.mesh.position))b.life=0;b.age+=dt;animateEnemyMissile(b.mesh,b.age,b.flamePhase);if(b.life>0&&b.mesh.position.distanceTo(new T.Vector3(player.x,player.y,player.z))<.9){damage();b.life=0;if(mode==='over')return;}if(b.life<=0||b.mesh.position.z>30){world.remove(b.mesh);hostile.splice(i,1);}}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.mesh.position.addScaledVector(e.vel,dt);e.mesh.material.opacity=Math.max(0,e.life);if(e.life<=0){world.remove(e.mesh);e.mesh.material.dispose();effects.splice(i,1);}}
  particles.update(dt);cannon.update(dt);
- enemyExplosions.update(dt,speed,camera);
+ enemyExplosions.update(dt,travelStep/dt,camera);
  return true;}
 async function prepareCombatRendering(){
  const warmup=new T.Group();warmup.name='Combat material warmup';warmup.visible=false;
@@ -433,11 +439,13 @@ function animate(now=performance.now()){
  }
  if(noticeTimer>0){noticeTimer-=dt;if(noticeTimer<=0)$('notice').style.opacity=0;}
  graphics.record(now,rawDt*1000,mode==='playing'&&(!gyro.selected||gyro.fresh),mode==='menu');
- particles.flush();cannon.flush(player,aircraft.quaternion,selectedMap==='island',shots);updateHUD(now);updateMissileHUD();
+ const project=selectedMap==='island'&&mode!=='menu'?terrainFlight.projectBatch:null;
+ particles.flush(project);cannon.flush(player,aircraft.quaternion,selectedMap==='island',shots,project);updateHUD(now);updateMissileHUD();
  updateTacticalHUD({mode,player,objects,elapsed,distance,kills},now);
  if(spaceAircraft&&selectedMap==='space')updateSpaceplane(spaceAircraft,mode==='menu'?menuTime:elapsed,mode!=='menu');
- activeMap.renderReflection(renderer,scene,camera,now);
- updateAircraftShadows(now);renderer.render(scene,camera);
+ terrainFlight.beginRender(aircraft,mode!=='menu');
+ try{activeMap.renderReflection(renderer,scene,camera,now);updateAircraftShadows(now);renderer.render(scene,camera);}
+ finally{terrainFlight.restoreRender();}
 }
 
 $('start').onclick=$('restart').onclick=reset;$('pause').onclick=$('resume').onclick=pause;$('returnLobby').onclick=$('endLobby').onclick=returnLobby;$('fireMode').onclick=toggleFire;$('missileSkill').onclick=launchTrackingMissile;$('sound').onclick=()=>{muted=!muted;$('sound').textContent=`音效 ${muted?'OFF':'ON'}`;$('sound').setAttribute('aria-label',muted?'开启音效':'关闭音效');tone(700,.15);};

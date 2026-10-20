@@ -40,7 +40,7 @@ function box(group, material, x, y, z, sx, sy, sz) {
   const mesh = new T.Mesh(cube, material); mesh.position.set(x,y,z); mesh.scale.set(sx,sy,sz); group.add(mesh); return mesh;
 }
 function sky() {
-  return new T.Mesh(new T.SphereGeometry(480,32,20),new T.ShaderMaterial({side:T.BackSide,depthWrite:false,
+  return new T.Mesh(new T.SphereGeometry(1800,32,20),new T.ShaderMaterial({side:T.BackSide,depthWrite:false,
     vertexShader:`varying vec3 vDir;void main(){vDir=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
     fragmentShader:`varying vec3 vDir;void main(){vec3 d=normalize(vDir);float h=max(0.,d.y);
       vec3 color=mix(vec3(.25,.39,.44),vec3(.055,.17,.29),pow(h,.48));
@@ -54,7 +54,7 @@ function sky() {
     }`}));
 }
 function ocean() {
-  const geometry=new T.PlaneGeometry(1400,1400,1,1);geometry.rotateX(-Math.PI/2);
+  const geometry=new T.PlaneGeometry(4000,4000,1,1);geometry.rotateX(-Math.PI/2);
   const material=new T.ShaderMaterial({uniforms:{uTime:time,uDistance:{value:0},uReflection:{value:null},uReflectionMatrix:{value:new T.Matrix4()},uReflectionReady:{value:0},uWaterDetail:{value:1},uTexel:{value:new T.Vector2(1/768,1/432)},uSun:{value:COAST_SUN}},
     vertexShader:`varying vec3 vWorld;varying vec4 vMirror;uniform mat4 uReflectionMatrix;
       void main(){vec4 p=modelMatrix*vec4(position,1.);vWorld=p.xyz;vMirror=uReflectionMatrix*p;gl_Position=projectionMatrix*viewMatrix*p;}`,
@@ -187,7 +187,7 @@ export function createIslandMap(scene) {
     time.value=elapsed;sea.material.uniforms.uDistance.value=distance;imported.update(distance,elapsed);
   }
   return {root,update,reset:()=>{imported.reset();update(0,0);},get ready(){return imported.ready;},
-    flyover:imported.flyover,get region(){return imported.region;},get loaded(){return imported.loaded;},prepareGPU:imported.prepareGPU,
+    navigation:imported.navigation,groundHeight:imported.groundHeight,get region(){return imported.region;},get loaded(){return imported.loaded;},prepareGPU:imported.prepareGPU,
     renderReflection:reflection.render,setQuality(profile){reflection.setQuality(profile);imported.setQuality(profile);},
     dispose(){reflection.dispose();imported.dispose();}};
 }

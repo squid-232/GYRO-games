@@ -1,4 +1,5 @@
 import * as T from './vendor/three.module.js';
+import {TERRAIN_XZ,TERRAIN_Y,ROUTE_SPACING,ROUTE_START,corridorX,preparePass,buildRoute,sampleRoute,heightAt} from './island-route.js';
 
 // Authored in the user's Notion Island Maps v2 pack, converted by tools/import_notion_islands.py.
 export const ISLAND_REGIONS = [
@@ -8,7 +9,7 @@ export const ISLAND_REGIONS = [
  ['07_Karst_Towers','喀斯特峰林','石灰岩峰 · 碧水潟湖'],['08_River_Valley','雨林河谷','高山湖泊 · 入海河流'],
  ['09_Glacier_Fjord','冰川峡湾','冰雪山脉 · 浮冰峡湾']
 ].map(([id,name,description])=>({id,name,description}));
-const BASE='./assets/notion-islands/', SCALE=.22, PERIOD=520;
+const BASE='./assets/notion-islands/', SCALE=TERRAIN_XZ, PERIOD=ROUTE_SPACING*4;
 const textureCache=new Map(), modelCache=new Map(), materialCache=new Map();
 const clock={value:0},animatedTextures=[];let manifestPromise,obstacleParts;
 async function fetchFile(path,binary=false){
@@ -145,11 +146,6 @@ export function createImportedSeaStack(){
  root.rotation.y=Math.random()*Math.PI*2;
  for(const part of parts)root.add(new T.Mesh(part.geometry,part.material));return root;
 }
-function heightAt(data,x,z){
- const u=T.MathUtils.clamp((x/data.size+.5)*256,0,256),v=T.MathUtils.clamp((z/data.size+.5)*256,0,256);
- const ix=Math.min(255,Math.floor(u)),iz=Math.min(255,Math.floor(v)),a=u-ix,b=v-iz,h=data.heights;
- return T.MathUtils.lerp(T.MathUtils.lerp(h[iz*257+ix],h[iz*257+ix+1],a),T.MathUtils.lerp(h[(iz+1)*257+ix],h[(iz+1)*257+ix+1],a),b)/65535*data.sizeY-data.depth;
-}
 function terrain(data,segments){
  const positions=[],uv=[],indices=[],width=segments+1;
  for(let z=0;z<=segments;z++)for(let x=0;x<=segments;x++){
@@ -160,19 +156,34 @@ function terrain(data,segments){
  const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
  geometry.setAttribute('uv',new T.Float32BufferAttribute(uv,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
 }
-function terrainMaterial(map){
- const mat=new T.MeshStandardMaterial({map,roughness:.92,metalness:.015,envMapIntensity:.22});
+function terrainMaterial(map,rock){
+ const mat=new T.MeshStandardMaterial({map,roughness:.94,metalness:.01,envMapIntensity:.18});
+ mat.userData.cliffTexture=rock;
  mat.onBeforeCompile=shader=>{
-  shader.vertexShader='varying vec3 vIslandGround;\n'+shader.vertexShader;
-  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvIslandGround=position;');
-  shader.fragmentShader='varying vec3 vIslandGround;\n'+shader.fragmentShader;
+  shader.uniforms.uCliffRock={value:rock};
+  shader.vertexShader='varying vec3 vIslandGround; varying vec3 vIslandNormal;\n'+shader.vertexShader;
+  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvIslandGround=position;vIslandNormal=normalize(normal/vec3(.60,.88,.60));');
+  shader.fragmentShader='varying vec3 vIslandGround;varying vec3 vIslandNormal;uniform sampler2D uCliffRock;\n'+shader.fragmentShader;
   shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
    float wet=1.-smoothstep(-.3,2.3,vIslandGround.y);
-   float grain=sin(vIslandGround.x*4.7)*sin(vIslandGround.z*5.2)*.025;
-   diffuseColor.rgb=mix(vec3(dot(diffuseColor.rgb,vec3(.2126,.7152,.0722))),diffuseColor.rgb,.8);
-   diffuseColor.rgb*=mix(.94,.66,wet)+grain;`);
+   vec3 groundNormal=normalize(vIslandNormal),blend=pow(abs(groundNormal),vec3(4.));blend/=max(dot(blend,vec3(1.)),.001);
+   vec3 rockPoint=vIslandGround*vec3(.60,.88,.60)*.24;
+   vec3 rockColor=texture2D(uCliffRock,rockPoint.yz).rgb*blend.x+texture2D(uCliffRock,rockPoint.xz).rgb*blend.y+texture2D(uCliffRock,rockPoint.xy).rgb*blend.z;
+   float cliff=1.-smoothstep(.35,.80,abs(groundNormal.y));
+   float rockLuma=dot(rockColor,vec3(.2126,.7152,.0722));
+   rockColor=mix(vec3(rockLuma),rockColor,.35)*vec3(.77,.82,.79);
+   diffuseColor.rgb=mix(diffuseColor.rgb,rockColor,cliff*.94);
+   diffuseColor.rgb=mix(vec3(dot(diffuseColor.rgb,vec3(.2126,.7152,.0722))),diffuseColor.rgb,.82);
+   diffuseColor.rgb*=mix(.96,.64,wet);
+   float rockRelief=rockLuma*cliff;`);
+  shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+   vec3 terrainDX=dFdx(-vViewPosition),terrainDY=dFdy(-vViewPosition);
+   vec3 terrainR1=cross(terrainDY,normal),terrainR2=cross(normal,terrainDX);
+   float terrainDet=dot(terrainDX,terrainR1);
+   vec3 terrainGrad=dFdx(rockRelief)*terrainR1+dFdy(rockRelief)*terrainR2;
+   normal=normalize(abs(terrainDet)*normal-sign(terrainDet)*terrainGrad*.055);`);
   shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.38,wet);');
- };mat.customProgramCacheKey=()=> 'notion-terrain-v1';return mat;
+ };mat.customProgramCacheKey=()=> 'notion-terrain-triplanar-cliffs-v3';return mat;
 }
 function coastMaterial(data){
  const bytes=new Uint8Array(257*257*2);
@@ -201,7 +212,7 @@ function addInstances(parent,parts,placements,category){
  for(const part of parts){
   const mesh=new T.InstancedMesh(part.geometry,part.material,placements.length);mesh.userData.category=category;mesh.userData.total=placements.length;
   for(let i=0;i<placements.length;i++){
-   const p=placements[i];position.set(p.x,p.y,p.z);rotation.setFromAxisAngle(axis,T.MathUtils.degToRad(p.rot||0));scale.setScalar(p.scale||1);
+   const p=placements[i];position.set(p.x,p.y,p.z);rotation.setFromAxisAngle(axis,T.MathUtils.degToRad(p.rot||0));scale.set(p.scale||1,(p.scale||1)*TERRAIN_XZ/TERRAIN_Y,p.scale||1);
    matrix.compose(position,rotation,scale);mesh.setMatrixAt(i,matrix);
   }
   mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();parent.add(mesh);
@@ -221,14 +232,17 @@ export function createNotionIslands(parent,shores,seaLevel){
   const data=await fetchFile(`${id}/layout.json`);
   const [raw,map]=await Promise.all([fetchFile(`${id}/height.r16`,true),texture(`${id}/color.webp`,true)]);
   data.heights=new Uint16Array(raw);if(data.heights.length!==257*257)throw Error('海岛地形数据长度错误');
+  preparePass(data);
   const vegetation=data.trees.filter((_,i)=>i%Math.max(1,Math.ceil(data.trees.length/160))===0).map(p=>({
    prefab:data.protos[p.p],x:p.x,z:p.z,y:heightAt(data,p.x,p.z),rot:p.r,scale:p.s,tree:true}));
-  const placements=[...data.props,...vegetation],names=[...new Set([...placements.map(p=>p.prefab),...data.meshes.map(m=>m.model)])];
+  const props=data.props.filter(p=>!data.originalHeights||Math.abs(p.x-corridorX(id,p.z))>40).map(p=>({...p,y:p.y+(data.originalHeights?heightAt(data,p.x,p.z)-heightAt(data,p.x,p.z,data.originalHeights):0)}));
+  const placements=[...props,...vegetation.filter(p=>!data.originalHeights||Math.abs(p.x-corridorX(id,p.z))>38)],names=[...new Set([...placements.map(p=>p.prefab),...data.meshes.map(m=>m.model)])];
   const assets=new Map(await Promise.all(names.map(async name=>[name,await model(name,info)])));
   const lowAssets=new Map(await Promise.all(names.map(async name=>[name,info.models[name].lod?await model(info.models[name].lod,info):assets.get(name)])));
   if(disposed)return;
-  const group=new T.Group();group.name=`Notion / ${data.cn}`;group.scale.setScalar(SCALE);group.visible=false;
-  const geometries=[terrain(data,64),terrain(data,128),terrain(data,256)],ground=terrainMaterial(map),coast=coastMaterial(data);
+  const group=new T.Group();group.name=`Notion / ${data.cn}`;group.scale.set(SCALE,TERRAIN_Y,SCALE);group.visible=false;
+  const rock=await texture(info.materials.RockGray.map,true);
+  const geometries=[terrain(data,64),terrain(data,128),terrain(data,256)],ground=terrainMaterial(map,rock),coast=coastMaterial(data);
   const coastGeometry=new T.PlaneGeometry(data.size,data.size);coastGeometry.rotateX(-Math.PI/2);
   const uv=coastGeometry.attributes.uv;for(let i=0;i<uv.count;i++)uv.setY(i,1-uv.getY(i));
   const land=new T.Mesh(geometries[0],ground);group.add(land);
@@ -240,8 +254,15 @@ export function createNotionIslands(parent,shores,seaLevel){
    const category=list[0].tree?'tree':smallProps.has(name)?'small':/Rowboat|Iceberg/.test(name)?'floating':'landmark';
    addInstances(details,assets.get(name),list,category);addInstances(lowDetails,lowAssets.get(name),list,category);
   }
-  for(const mesh of data.meshes)for(const part of assets.get(mesh.model))group.add(new T.Mesh(part.geometry,part.material));
-  regions.set(id,{id,data,group,land,details,lowDetails,foam,geometries,ground,coast,coastGeometry});parent.add(group);shores.push(foam);parent.dispatchEvent({type:'terrainprogress',loaded:regions.size,total:ISLAND_REGIONS.length});
+  const adjusted=[];
+  for(const mesh of data.meshes)for(const part of assets.get(mesh.model)){
+   let geometry=part.geometry;
+   if(data.originalHeights){geometry=geometry.clone();const p=geometry.attributes.position;
+    for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,p.getY(i)+heightAt(data,x,z)-heightAt(data,x,z,data.originalHeights));}
+    geometry.computeVertexNormals();geometry.computeBoundingSphere();adjusted.push(geometry);
+   }group.add(new T.Mesh(geometry,part.material));
+  }
+  regions.set(id,{id,data,adjusted,group,land,details,lowDetails,foam,geometries,ground,coast,coastGeometry});parent.add(group);shores.push(foam);parent.dispatchEvent({type:'terrainprogress',loaded:regions.size,total:ISLAND_REGIONS.length});
  }
  async function prepare(){
   if(loading)return loading;if(regions.size===ISLAND_REGIONS.length)return;
@@ -259,70 +280,69 @@ export function createNotionIslands(parent,shores,seaLevel){
  function assign(slot,id){
   if(slot.region)slot.region.group.visible=false;
   slot.region=regions.get(id);const g=slot.region.group;g.visible=true;
-  // Scenic tiles flank the sea lane; a designated tile receives a flyover route.
-  g.position.set(slot.side*(72+Math.random()*6),seaLevel,slot.startZ);
-  g.rotation.y=slot.side*Math.PI/2+(Math.random()-.5)*.12;
-  if(slot.flyover){
-   // Sample the full wing/steering corridor in the rotated source heightfield.
-   const c=Math.cos(g.rotation.y),s=Math.sin(g.rotation.y);let peak=seaLevel;
-   for(let z=-64;z<=64;z+=2)for(let x=-15;x<=15;x+=3){
-    const lx=(c*x-s*z)/SCALE,lz=(s*x+c*z)/SCALE;
-    if(Math.abs(lx)<slot.region.data.size/2&&Math.abs(lz)<slot.region.data.size/2)
-     peak=Math.max(peak,seaLevel+heightAt(slot.region.data,lx,lz)*SCALE);
-   }
-   slot.lift=Math.max(0,peak+5);
-  }
+  slot.x=slot.side*(58+Math.random()*18);g.position.set(slot.x,seaLevel,7-slot.center);g.rotation.y=0;
+  slot.profile=buildRoute(slot.region.data,slot.x,seaLevel);
  }
  function reset(){
   if(regions.size!==ISLAND_REGIONS.length)return;
   for(const region of regions.values())region.group.visible=false;
   slots.length=0;bag=[];lastRegion='';const used=new Set();
-  for(let i=0;i<4;i++){const slot={side:i%2?1:-1,flyover:i===2,startZ:-42-i*130};const id=nextRegion(used);used.add(id);assign(slot,id);slots.push(slot);}
-  update(0,0);
+  // A readable opening establishes the new mountain scale; following sectors shuffle.
+  for(let i=0;i<4;i++){const slot={side:i%2?-1:1,center:ROUTE_START+i*ROUTE_SPACING};
+   const id=i===0?'05_Cliff_Plateau':nextRegion(used);used.add(id);assign(slot,id);slots.push(slot);
+  }update(0,0);
  }
+ let traveled=0;
  function update(distance,elapsed){
-  clock.value=elapsed;for(const item of animatedTextures)item.map.offset.set(elapsed*item.x,elapsed*item.y);
+  traveled=distance;clock.value=elapsed;for(const item of animatedTextures)item.map.offset.set(elapsed*item.x,elapsed*item.y);
   for(const slot of slots){
-   while(slot.startZ+distance>(slot.flyover?190:120)){
-    const used=new Set(slots.map(s=>s.region.id));slot.startZ-=PERIOD;if(slot.flyover)slot.side*=-1;assign(slot,nextRegion(used));
-   }
-   const tile=slot.region,z=slot.startZ+distance;tile.group.position.z=z;
-   const near=z>-(quality===2?230:170)&&z<100;
-   tile.land.geometry=tile.geometries[near?(quality===2?2:quality===1?1:0):0];
-   const detailed=quality===2&&z> -100;tile.details.visible=near&&detailed;tile.lowDetails.visible=near&&!detailed;
+   // Keep the entire connecting spline alive until camera and trailing effects pass it.
+   while(distance-slot.center>370){const used=new Set(slots.map(s=>s.region.id));slot.center+=PERIOD;slot.side*=-1;assign(slot,nextRegion(used));}
+   const tile=slot.region,z=7+distance-slot.center;tile.group.position.z=z;
+   const near=z> -550&&z<230;
+   tile.land.geometry=tile.geometries[near?(quality===0?1:2):0];
+   const detailed=quality===2&&z> -270;tile.details.visible=near&&detailed;tile.lowDetails.visible=near&&!detailed;
    if(near)for(const mesh of (detailed?tile.details:tile.lowDetails).children){
     const kind=mesh.userData.category,total=mesh.userData.total;
-    mesh.visible=kind!=='small'||quality>0&&z> -90;
-    if(kind==='floating')mesh.position.y=Math.sin(elapsed*1.2)*.16;
-    mesh.count=kind==='tree'?Math.max(1,Math.ceil(total*[.22,.5,1][quality])):total;
+    mesh.visible=kind!=='small'||quality>0&&z> -180;
+    if(kind==='floating')mesh.position.y=Math.sin(elapsed*1.2)*.06;
+    mesh.count=kind==='tree'?Math.max(1,Math.ceil(total*[.35,.65,1][quality])):total;
    }
   }
-  const nearest=slots.reduce((best,s)=>!best||Math.abs(s.region.group.position.z+45)<Math.abs(best.region.group.position.z+45)?s:best,null);
+  const nearest=slots.reduce((best,s)=>!best||Math.abs(s.center-distance)<Math.abs(best.center-distance)?s:best,null);
   if(nearest&&focus!==nearest.region.id){focus=nearest.region.id;parent.dispatchEvent({type:'regionchange'});}
+ }
+ function navigation(distance,out={}){
+  const slot=slots.find(s=>Math.abs(distance-s.center)<336);
+  out.x=out.y=0;out.active=false;out.transition=false;out.phase=Infinity;out.name='开阔海域';out.key='sea';out.pass=false;
+  if(slot){sampleRoute(slot.profile,distance-slot.center,out);out.phase=distance-slot.center;
+   out.active=Math.abs(out.phase)<300;out.transition=Math.abs(out.phase)>145&&out.active;
+   out.pass=!!slot.region.data.originalHeights;out.name=ISLAND_REGIONS.find(r=>r.id===slot.region.id).name;out.key=`${slot.center}:${slot.region.id}`;
+  }return out;
+ }
+ function groundHeight(x,z){
+  let height=seaLevel;
+  for(const slot of slots){const g=slot.region.group,lx=(x-g.position.x)/SCALE,lz=(z-g.position.z)/SCALE;
+   height=Math.max(height,seaLevel+heightAt(slot.region.data,lx,lz)*TERRAIN_Y);
+  }return height;
  }
  function prepareGPU(renderer){
   if(gpuReady||regions.size!==ISLAND_REGIONS.length)return;
   const textures=new Set();
   for(const region of regions.values()){
-   textures.add(region.coast.depth);
+   textures.add(region.coast.depth);textures.add(region.ground.userData.cliffTexture);
    region.group.traverse(object=>{if(object.material)for(const key of ['map','normalMap','emissiveMap']){const texture=object.material[key];if(texture)textures.add(texture);}});
   }
   for(const texture of textures)renderer.initTexture(texture);
   gpuReady=true;
  }
- function flyover(distance){
-  const slot=slots.find(s=>s.flyover);if(!slot)return null;
-  const phase=distance-(7-slot.startZ);
-  return {key:`${slot.startZ}:${slot.region.id}`,phase,x:slot.region.group.position.x,lift:slot.lift,
-   name:ISLAND_REGIONS.find(r=>r.id===slot.region.id).name};
- }
- return {update,reset,prepareGPU,flyover,get ready(){return prepare();},get region(){return focus;},get loaded(){return regions.size===ISLAND_REGIONS.length;},
+ return {update,reset,prepareGPU,navigation,groundHeight,get ready(){return prepare();},get region(){return focus;},get loaded(){return regions.size===ISLAND_REGIONS.length;},
   setQuality(profile){quality=profile.reflectionSize>512?2:profile.shadows?1:0;},
   dispose(){
    disposed=true;slots.length=0;if(obstacleWarmup)parent.remove(obstacleWarmup);
    for(const region of regions.values()){
     parent.remove(region.group);const i=shores.indexOf(region.foam);if(i>=0)shores.splice(i,1);
-    region.group.traverse(o=>{if(o.isInstancedMesh)o.dispose();});region.geometries.forEach(g=>g.dispose());
+    region.group.traverse(o=>{if(o.isInstancedMesh)o.dispose();});region.geometries.forEach(g=>g.dispose());region.adjusted.forEach(g=>g.dispose());
     region.ground.map.dispose();textureCache.delete(`${region.id}/color.webptrue`);region.ground.dispose();region.coast.mat.dispose();region.coast.depth.dispose();region.coastGeometry.dispose();
    }
    regions.clear();

@@ -15,7 +15,7 @@ export function createParticleSystem(parent, sourceGeometry, capacity = 384) {
   };
   material.customProgramCacheKey = () => 'gyro-instanced-particles-v1';
   const mesh = new T.InstancedMesh(geometry, material, capacity);
-  mesh.name='Pooled combat particles'; mesh.count=0; mesh.frustumCulled=false;
+  mesh.name='Pooled combat particles';mesh.userData.routeBatch=true; mesh.count=0; mesh.frustumCulled=false;
   mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
   // 初始化颜色属性，让预编译与正式渲染使用完全相同的 shader 变体。
   mesh.setColorAt(0,new T.Color(0xffffff));mesh.instanceColor.setUsage(T.DynamicDrawUsage);
@@ -41,10 +41,10 @@ export function createParticleSystem(parent, sourceGeometry, capacity = 384) {
       else p.position.addScaledVector(p.velocity,dt);
     }
   }
-  function flush() {
+  function flush(project) {
     mesh.count=count;
     for(let i=0;i<count;i++){
-      const p=slots[i];transform.position.copy(p.position);transform.scale.setScalar(p.size);transform.updateMatrix();
+      const p=slots[i];transform.position.copy(p.position);transform.quaternion.identity();transform.scale.setScalar(p.size);if(project)project(transform);transform.updateMatrix();
       mesh.setMatrixAt(i,transform.matrix);mesh.setColorAt(i,p.color);opacity.setX(i,Math.min(1,p.life)*p.alpha);
     }
     if(count){mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true;opacity.needsUpdate=true;}
