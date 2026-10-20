@@ -100,7 +100,7 @@ export function createCannonEffects(parent) {
     for(const shot of shots){
       const type=shot.mesh.userData.roundType;
       if(!rounds[type]||counts[type]>=capacity)continue;
-      roundPose.position.copy(shot.mesh.position);roundPose.quaternion.copy(shot.mesh.quaternion);roundPose.scale.copy(shot.mesh.scale);if(project)project(roundPose);roundPose.updateMatrix();rounds[type].setMatrixAt(counts[type]++,roundPose.matrix);
+      roundPose.position.copy(shot.mesh.position);roundPose.quaternion.copy(shot.mesh.quaternion);roundPose.scale.copy(shot.mesh.scale);if(project&&!shot.mesh.userData.routeWorld)project(roundPose);roundPose.updateMatrix();rounds[type].setMatrixAt(counts[type]++,roundPose.matrix);
     }
     for(const [type,mesh] of Object.entries(rounds)){mesh.count=counts[type];if(mesh.count)mesh.instanceMatrix.needsUpdate=true;}
     // 低帧率的追赶子步中即使已完成闪焰，也至少在本画面呈现一次射击提示。

@@ -280,7 +280,7 @@ export function createNotionIslands(parent,shores,seaLevel){
  function assign(slot,id){
   if(slot.region)slot.region.group.visible=false;
   slot.region=regions.get(id);const g=slot.region.group;g.visible=true;
-  slot.x=slot.side*(58+Math.random()*18);g.position.set(slot.x,seaLevel,7-slot.center);g.rotation.y=0;
+  slot.x=0;g.position.set(slot.x,seaLevel,7-slot.center);g.rotation.y=0;
   slot.profile=buildRoute(slot.region.data,slot.x,seaLevel);
  }
  function reset(){

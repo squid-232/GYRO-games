@@ -5,8 +5,11 @@ const smooth=t=>{t=T.MathUtils.clamp(t,0,1);return t*t*t*(t*(t*6-15)+10);};
 const passes=new Set(['05_Cliff_Plateau','06_Twin_Peaks','07_Karst_Towers','08_River_Valley','09_Glacier_Fjord']);
 export function corridorX(id,z){
  const u=T.MathUtils.clamp((250-z)/500,0,1),edge=Math.sin(Math.PI*u);
- const bend=id==='09_Glacier_Fjord'?48:id==='05_Cliff_Plateau'?70:55;
- return bend*Math.sin(2*Math.PI*u)*edge*edge+(id==='01_Volcano'?110:0)*edge*edge*edge;
+ // Open water stays on the centerline. A single shallow bend is enough inside a pass.
+ if(id==='01_Volcano')return 110*edge**4; // Bypass the volcanic summit once.
+ if(!passes.has(id))return 0;
+ const bend=id==='08_River_Valley'?-12:12;
+ return bend*edge**4;
 }
 export function heightAt(data,x,z,source=data.heights){
  if(Math.abs(x)>data.size/2||Math.abs(z)>data.size/2)return -data.depth;

@@ -2,7 +2,7 @@ import * as T from './vendor/three.module.js';
 
 // Simulation uses longitudinal/lateral lane coordinates. Only the render pose is
 // projected onto the continuous world route; it is restored before the next tick.
-// This preserves steering offsets, collisions and targeting through every bend.
+// Projectiles use independent world positions after launch and bypass this projection.
 export function createTerrainFlight(map,world,camera,{onEnter,onFinish}){
  const objective=document.getElementById('flightObjective');
  const state={x:0,y:0,bank:0,climb:0,yaw:0,active:false,transition:false,phase:Infinity};
@@ -22,6 +22,24 @@ export function createTerrainFlight(map,world,camera,{onEnter,onFinish}){
   frameAt(traveled+7-local.z,nav);
   return out.set(nav.x+Math.cos(nav.yaw)*local.x,nav.y+local.y,local.z-Math.sin(nav.yaw)*local.x);
  }
+ // Invert the lateral route projection for collision, radar and local impact effects.
+ function localPoint(position,out){
+  if(!island)return out.copy(position);
+  const wx=position.x,wy=position.y,wz=position.z;let z=wz,x=wx;
+  for(let i=0;i<6;i++){
+   frameAt(traveled+7-z,nav);x=(wx-nav.x)/Math.cos(nav.yaw);
+   z=wz+Math.sin(nav.yaw)*x;
+  }
+  frameAt(traveled+7-z,nav);
+  return out.set((wx-nav.x)/Math.cos(nav.yaw),wy-nav.y,z);
+ }
+ function direction(local,vector,out){
+  out.copy(vector);if(!island)return out;
+  frameAt(traveled+7-local.z,nav);
+  routeQuaternion.setFromEuler(euler.set(nav.pitch,nav.yaw,0,'YXZ'));
+  return out.applyQuaternion(routeQuaternion);
+ }
+ function worldGroundHit(position){return island&&map.groundHeight(position.x,position.z)>position.y-.45;}
  function pose(object,billboard=false){
   point(object.position,scratch);object.position.copy(scratch);
   if(!billboard){routeQuaternion.setFromEuler(euler.set(nav.pitch,nav.yaw,0,'YXZ'));object.quaternion.premultiply(routeQuaternion);}
@@ -44,19 +62,19 @@ export function createTerrainFlight(map,world,camera,{onEnter,onFinish}){
   frameAt(distance,center);map.navigation(distance-3,before);map.navigation(distance+3,after);
   const curvature=(after.x-2*center.x+before.x)/9/Math.pow(1+center.dx*center.dx,1.5);
   Object.assign(state,{x:center.x,y:center.y,yaw:center.yaw,climb:center.pitch,
-   bank:T.MathUtils.clamp(-Math.atan(curvature*speed*speed/18),-.25,.25),
+   bank:T.MathUtils.clamp(-Math.atan(curvature*speed*speed/28),-.08,.08),
    active:center.active,transition:center.transition,phase:center.phase});
   if(center.active&&key!==center.key){key=center.key;onEnter(center.name);}
   if(active&&!center.active)onFinish();active=center.active;
   objective.classList.toggle('hidden',!active);
-  if(active){const p=center.phase,stage=p< -180?'绕崖接近':p< -100?'对准入口':p<100?(center.pass?'峡谷穿行':'海岛穿行'):p<180?'冲出山口':'展开海湾';
+  if(active){const p=center.phase,stage=p< -180?'直线接近':p< -100?'对准入口':p<100?(center.pass?'峡谷穿行':'海岛穿行'):p<180?'冲出山口':'展开海湾';
    const text=`${center.name} / ${stage}`;if(objective.textContent!==text)objective.textContent=text;
   }return state;
  }
  function aimCamera(dt,player){
-  // A trailing point follows the same route; the gaze leads it into the next bend.
+  // Short, level pursuit camera: no horizon roll or automatic zoom during transfers.
   point(desired.set(player.x*.32,player.y+5.8,24),desired);
-  point(look.set(player.x*.35,player.y+.8,-42),look);
+  point(look.set(player.x*.35,player.y+.8,-22),look);
   if(!cameraReady){camera.position.copy(desired);lookSmooth.copy(look);cameraReady=true;}
   else{camera.position.lerp(desired,1-Math.exp(-5*dt));lookSmooth.lerp(look,1-Math.exp(-3.8*dt));}
   if(island){
@@ -68,9 +86,7 @@ export function createTerrainFlight(map,world,camera,{onEnter,onFinish}){
    }
    camera.position.y=Math.max(camera.position.y,map.groundHeight(camera.position.x,camera.position.z)+3);
   }
-  camera.up.set(Math.sin(state.bank*.065),1,0).normalize();camera.lookAt(lookSmooth);
-  const fov=T.MathUtils.damp(camera.fov,state.transition?55:53,2.2,dt);
-  if(Math.abs(fov-camera.fov)>.001){camera.fov=fov;camera.updateProjectionMatrix();}
+  camera.up.set(0,1,0);camera.lookAt(lookSmooth);
  }
  function groundHit(local,radius=0){
   if(!island)return false;
@@ -82,7 +98,7 @@ export function createTerrainFlight(map,world,camera,{onEnter,onFinish}){
  function beginRender(aircraft,enabled){
   if(!island||!enabled)return;
   for(const object of [...world.children,aircraft]){
-   if(object.userData.routeBatch||!object.visible)continue;
+   if(object.userData.routeBatch||object.userData.routeWorld||!object.visible)continue;
    let snapshot=saved.get(object);if(!snapshot){snapshot={position:new T.Vector3(),quaternion:new T.Quaternion()};saved.set(object,snapshot);}
    snapshot.position.copy(object.position);snapshot.quaternion.copy(object.quaternion);rendered.push(object);
    pose(object,object.userData.routeBillboard);
@@ -90,7 +106,7 @@ export function createTerrainFlight(map,world,camera,{onEnter,onFinish}){
  }
  function restoreRender(){for(const object of rendered){const snapshot=saved.get(object);object.position.copy(snapshot.position);object.quaternion.copy(snapshot.quaternion);}rendered.length=0;}
  function projectBatch(object){if(island)pose(object);}
- reset();return {update,advance,aimCamera,point,groundHit,beginRender,restoreRender,projectBatch,reset,state,
+ reset();return {update,advance,aimCamera,point,localPoint,direction,worldGroundHit,groundHit,beginRender,restoreRender,projectBatch,reset,state,
   get active(){return active;},get transition(){return state.transition;},
   get seaObstacles(){if(!island)return true;for(const d of [-35,0,145]){map.navigation(traveled+d,nav);if(nav.y>.01||map.groundHeight(nav.x,7-d)>-2.5)return false;}return true;},
   dispose(){restoreRender();}};

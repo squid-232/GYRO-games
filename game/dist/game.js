@@ -194,10 +194,13 @@ function launchTrackingMissile(){
  if(!target){notice('前方没有可锁定敌机 · 技能保留');return;}
  const side=skill.side;skill.side=-side;
  const origin=new T.Vector3(side*.72,-.34,-.28).applyQuaternion(aircraft.quaternion).add(new T.Vector3(player.x,player.y,player.z));
- const mesh=createPlayerMissile(new T.Vector3(0,0,-1));mesh.position.copy(origin);world.add(mesh);
- shots.push({kind:'tracking',mesh,target,vel:new T.Vector3(side*2.8,-3.8,-9),age:0,life:5,ignited:false,flightSpeed:24,trailTimer:0});
+ const forward=terrainFlight.direction(origin,new T.Vector3(0,0,-1),new T.Vector3());
+ const vel=terrainFlight.direction(origin,new T.Vector3(side*2.8,-3.8,-9),new T.Vector3());
+ terrainFlight.point(origin,origin);
+ const mesh=createPlayerMissile(forward);mesh.position.copy(origin);mesh.userData.routeWorld=true;world.add(mesh);
+ shots.push({kind:'tracking',mesh,target,vel,age:0,life:5,ignited:false,flightSpeed:24,trailTimer:0});
  skill.cooldown=missileConfig.cooldown;
- particleBurst(origin,0xd5e7e9,7);tone(210,.12,'triangle',.04);
+ projectileBurst(origin,0xd5e7e9,7);tone(210,.12,'triangle',.04);
  notice('冷弹射 · 即将点火追踪');updateMissileHUD();
 }
 function damageEnemy(enemy,amount,position){
@@ -234,7 +237,8 @@ function missileHitFraction(o,start,end){
  }
  return enter;
 }
-function updateTrackingMissile(s,dt){
+function updateTrackingMissile(s,dt,travelStep){
+ s.mesh.position.z+=travelStep;
  // 分步转向保留可见弧线，先弹射 0.35 秒，安全离机后开启发动机。
  const steps=Math.max(1,Math.ceil(dt/.008)),step=dt/steps;
  for(let i=0;i<steps;i++){
@@ -244,15 +248,16 @@ function updateTrackingMissile(s,dt){
   }else{
    if(!s.ignited){
     s.ignited=true;s.mesh.getObjectByName('missile-exhaust').visible=true;
-    tone(460,.18,'sawtooth',.025);particleBurst(s.mesh.position,0xa9dfff,4);
+    tone(460,.18,'sawtooth',.025);projectileBurst(s.mesh.position,0xa9dfff,4);
    }
    // 原目标已击毁或飞过玩家时，优先重新捕获前方敌机。
    if(!objects.includes(s.target)||s.target.hp<=0||s.target.mesh.position.z>player.z+3)s.target=findMissileTarget();
    s.flightSpeed=Math.min(missileConfig.speed,s.flightSpeed+120*step);
    if(s.target){
-    const aim=s.target.mesh.position.clone(),lead=Math.min(.6,aim.distanceTo(s.mesh.position)/(s.flightSpeed+speed));
-    aim.z+=speed*lead;
-    aim.x+=Math.cos(elapsed*1.2+s.target.phase)*1.2*(elapsed<8?.35:1.8)*lead;
+    const aim=terrainFlight.point(s.target.mesh.position,new T.Vector3());
+    const lead=Math.min(.45,aim.distanceTo(s.mesh.position)/(s.flightSpeed+speed));
+    const targetVelocity=terrainFlight.direction(s.target.mesh.position,s.target.velocity,new T.Vector3());
+    aim.addScaledVector(targetVelocity,lead);
     const desired=aim.sub(s.mesh.position);
     if(desired.lengthSq()>1e-8){
      const rotation=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,0,1),desired.normalize());
@@ -263,27 +268,21 @@ function updateTrackingMissile(s,dt){
    s.mesh.position.addScaledVector(s.vel,step);
    animateEnemyMissile(s.mesh,s.age);
   }
-  let hit=null,first=Infinity;
-  for(const o of objects){
-   if(o.type==='coin')continue;
-   const fraction=missileHitFraction(o,previous,s.mesh.position);
-   if(fraction<first){first=fraction;hit=o;}
-  }
-  if(hit){
-   const impact=previous.lerp(s.mesh.position,first);
-   if(hit.type==='enemy')damageEnemy(hit,missileConfig.damage,impact);
-   else particleBurst(impact,0x9edbff,10);
+  const impact=projectileHit(previous,s.mesh.position);
+  if(impact){
+   if(impact.target?.type==='enemy')damageEnemy(impact.target,missileConfig.damage,impact.position);
+   else particleBurst(impact.position,0x9edbff,10);
    return true;
   }
   if(s.life<=0||s.mesh.position.z>30||s.mesh.position.z<-190){
-   particleBurst(s.mesh.position,0x9edbff,5);return true;
+   projectileBurst(s.mesh.position,0x9edbff,5);return true;
   }
  }
  if(s.ignited){
   s.trailTimer-=dt;
   if(s.trailTimer<=0){
    s.trailTimer=.055;
-   particles.emit(s.mesh.position,new T.Vector3(0,0,speed*.2),0xb3dce5,.35,1.4);
+   particles.emit(terrainFlight.localPoint(s.mesh.position,impactLocal),new T.Vector3(0,0,speed*.2),0xb3dce5,.35,1.4);
   }
  }
  return false;
@@ -316,24 +315,51 @@ function damage(){if(invuln>0||mode!=='playing')return;hp--;invuln=1.7;shake=.4;
 function addCoin(x,y,z){const mesh=createMoraCoin();mesh.position.set(x,y,z);world.add(mesh);objects.push({type:'coin',mesh,r:.9});}
 function addRock(x,y,z,r=1.8){if(selectedMap==='island'&&!terrainFlight.seaObstacles)return;const obstacle=selectedMap==='space'?createOrbitalObstacle(x,y,z,r,waveIndex):{type:'rock',...createSeaStack(x,y,z,r)};world.add(obstacle.mesh);objects.push(obstacle);}
 function addGate(x,y,z){const gate=createOrbitalGate(x,y,z);world.add(gate.mesh);objects.push(gate);}
-function shotHitsObject(o,shot){
- const p=o.mesh.position,x=shot.mesh.position.x,y=shot.mesh.position.y;
- if(o.type==='gate')return Math.abs(Math.hypot(x-p.x,y-p.y)-o.ringRadius)<o.tube+.08&&p.z>=shot.mesh.position.z-o.halfDepth&&p.z<=shot.prevZ+o.halfDepth;
- return Math.abs(p.x-x)<(o.hit?.x??o.r)&&(o.type==='rock'?rockHeightHit(o,y):Math.abs(p.y-y)<(o.hit?.y??o.r))&&p.z>=shot.mesh.position.z-(o.hit?.z??o.r)&&p.z<=shot.prevZ+(o.hit?.z??o.r);
+// Projectiles fly in world space. Convert only the short swept collision segment.
+const collisionStart=new T.Vector3(),collisionEnd=new T.Vector3(),impactLocal=new T.Vector3();
+function projectileHit(start,end){
+ terrainFlight.localPoint(start,collisionStart);terrainFlight.localPoint(end,collisionEnd);
+ let target=null,fraction=Infinity;
+ for(const o of objects){
+  if(o.type==='coin')continue;
+  const t=missileHitFraction(o,collisionStart,collisionEnd);
+  if(t<fraction){fraction=t;target=o;}
+ }
+ // Stop at terrain before an enemy behind it; sample the swept world segment.
+ const steps=Math.max(1,Math.ceil(start.distanceTo(end)/.5));
+ for(let i=0;i<=steps;i++){
+  const t=i/steps;if(t>=fraction)break;
+  if(terrainFlight.worldGroundHit(impactLocal.copy(start).lerp(end,t))){fraction=t;target=null;break;}
+ }
+ return fraction<Infinity?{target,position:impactLocal.copy(collisionStart).lerp(collisionEnd,fraction)}:null;
 }
+function projectileBurst(position,color,count){particleBurst(terrainFlight.localPoint(position,impactLocal),color,count);}
 function playerHitsObject(o){
  const p=o.mesh.position;
  if(o.type==='gate')return ringIntersects(o,player.x,player.y,player.z,.65);
  return (o.type==='rock'?(Math.abs(p.x-player.x)<o.r+.65&&rockHeightHit(o,player.y,.65)):o.hit?Math.hypot((p.x-player.x)/(o.hit.x+.65),(p.y-player.y)/(o.hit.y+.65))<1:Math.hypot(p.x-player.x,p.y-player.y)<o.r+.65)&&Math.abs(p.z-player.z)<(o.hit?.z??o.r)+1;
 }
 function rockHeightHit(o,y,padding=0){return y>o.bottom-padding&&y<o.top+padding;}
-function addEnemy(x,y,z){const mesh=createEnemyAircraft();mesh.position.set(x,y,z);world.add(mesh);objects.push({type:'enemy',mesh,r:1.15,hit:ENEMY_EXTENTS,hp:3+Math.min(3,level-1),baseX:x,phase:Math.random()*6.28,fire:2+Math.random()*2});}
+function addEnemy(x,y,z){const mesh=createEnemyAircraft();mesh.position.set(x,y,z);world.add(mesh);objects.push({type:'enemy',mesh,r:1.15,hit:ENEMY_EXTENTS,hp:3+Math.min(3,level-1),baseX:x,baseY:y,age:0,attackSide:x>0?-1:1,velocity:new T.Vector3(),phase:Math.random()*6.28,fire:1.5+Math.random()*1.5});}
+function flyEnemy(o,dt){
+ const p=o.mesh.position,old=p.clone();o.age+=dt;
+ // Approach, traverse the firing lane, then bank outward and climb past the player.
+ const crossing=T.MathUtils.smoothstep(o.age,.8,4.8);
+ const exit=T.MathUtils.smoothstep(p.z,-26,18);
+ const amplitude=selectedMap==='island'&&terrainFlight.active?3.5:6;
+ p.x=T.MathUtils.damp(p.x,clamp(o.baseX+o.attackSide*(crossing*amplitude+exit*4),-12,12),2,dt);
+ p.y=T.MathUtils.damp(p.y,clamp(o.baseY+Math.sin(o.age*.85+o.phase)*.65+exit*2,3.5,11),2,dt);
+ p.z+=dt*(9+exit*10);
+ o.velocity.copy(p).sub(old).multiplyScalar(1/dt);
+ o.mesh.rotation.set(-Math.atan2(o.velocity.y,22),Math.atan2(o.velocity.x,22),clamp(-o.velocity.x*.08,-.3,.3));
+}
 function launchEnemyMissile(enemy){
  // Alternate underwing launch points and aim once, preserving the dodge timing.
  const side=enemy.launchSide??-1;enemy.launchSide=-side;
  const origin=new T.Vector3(side*.86,-.29,.48).applyQuaternion(enemy.mesh.quaternion).add(enemy.mesh.position);
- const vel=new T.Vector3(player.x,player.y,player.z).sub(origin).normalize().multiplyScalar(38);
- const mesh=createEnemyMissile(vel);mesh.position.copy(origin);world.add(mesh);
+ terrainFlight.point(origin,origin);
+ const vel=terrainFlight.point(new T.Vector3(player.x,player.y,player.z),new T.Vector3()).sub(origin).normalize().multiplyScalar(38);
+ const mesh=createEnemyMissile(vel);mesh.position.copy(origin);mesh.userData.routeWorld=true;world.add(mesh);
  hostile.push({mesh,vel,life:5,age:0,flamePhase:elapsed*7+side});
 }
 function spawn(){waveIndex++;
@@ -361,7 +387,10 @@ function fire(){
  for(const side of [-1,1]){
   const mesh=orbital?cannon.createLaser():cannon.createTracer();
   cannon.muzzlePosition(side,player,aircraft.quaternion,mesh.position);
-  shots.push({mesh,life:1.6});
+  const vel=terrainFlight.direction(mesh.position,new T.Vector3(0,0,-115-speed),new T.Vector3());
+  terrainFlight.point(mesh.position,mesh.position);mesh.userData.routeWorld=true;
+  mesh.quaternion.setFromUnitVectors(new T.Vector3(0,0,-1),vel.clone().normalize());
+  shots.push({mesh,vel,life:1.6});
  }
  tone(orbital?720:170,.065,orbital?'triangle':'sawtooth',orbital?.012:.018);
 }
@@ -384,13 +413,30 @@ function tick(dt,motion=gyro.sample(dt)){if(mode!=='playing'||(gyro.selected&&!g
  aircraft.position.set(player.x,player.y,player.z);aircraft.rotation.z=T.MathUtils.damp(aircraft.rotation.z,-dx*.32+flight.bank,8,dt);aircraft.rotation.x=T.MathUtils.damp(aircraft.rotation.x,dy*.12,8,dt);aircraft.visible=invuln>0?Math.floor(invuln*12)%2===0:true;
  terrainFlight.aimCamera(dt,player);if(shake){camera.position.x+=(Math.random()-.5)*shake;camera.position.y+=(Math.random()-.5)*shake;}
  spawnTimer-=dt;if(spawnTimer<=0){spawn();spawnTimer=Math.max(1.6,3.4-level*.15);}shotTimer-=dt;if((autoFire||keys.has('Space')||touch.fire)&&shotTimer<=0){fire();shotTimer=.14;}
- for(let i=shots.length-1;i>=0;i--){const s=shots[i];if(s.kind==='tracking')continue;s.prevZ=s.mesh.position.z;s.mesh.position.z-=115*dt;s.life-=dt;let hit=terrainFlight.groundHit(s.mesh.position);for(let j=objects.length-1;j>=0;j--){const o=objects[j];if(hit||o.type==='coin')continue;const p=o.mesh.position;if(shotHitsObject(o,s)){hit=true;if(o.type==='enemy')damageEnemy(o,1,s.mesh.position);else particleBurst(s.mesh.position,0xffb66c,2);break;}}if(hit||s.life<=0){world.remove(s.mesh);shots.splice(i,1);}}
- for(let i=objects.length-1;i>=0;i--){const o=objects[i];const p=o.mesh.position;p.z+=travelStep;if(o.type==='coin'){o.mesh.rotation.y+=dt*2.8;if(Math.hypot(p.x-player.x,p.y-player.y)<1.3&&Math.abs(p.z-player.z)<1.8){coins++;score+=25;tone(1300,.09,'sine',.025);particleBurst(p,0xffd16b,5);removeObject(i);continue;}}else{if(o.type==='asteroid'){o.mesh.rotation.x+=dt*o.spin;o.mesh.rotation.z+=dt*o.spin*.7;}if(o.type==='enemy'){p.x=clamp(o.baseX+Math.sin(elapsed*1.2+o.phase)*(elapsed<8?.35:1.8),-10,10);o.mesh.rotation.z=Math.cos(elapsed*1.2+o.phase)*.16;o.fire-=dt;if(o.fire<0&&p.z<-8&&p.z>-85&&!(selectedMap==='island'&&terrainFlight.transition)){launchEnemyMissile(o);o.fire=Math.max(.9,2.5-level*.12);}}if(playerHitsObject(o)){damage();if(mode==='over')return;}}if(p.z>25)removeObject(i);}
+ for(let i=objects.length-1;i>=0;i--){const o=objects[i];const p=o.mesh.position;p.z+=travelStep;if(o.type==='coin'){o.mesh.rotation.y+=dt*2.8;if(Math.hypot(p.x-player.x,p.y-player.y)<1.3&&Math.abs(p.z-player.z)<1.8){coins++;score+=25;tone(1300,.09,'sine',.025);particleBurst(p,0xffd16b,5);removeObject(i);continue;}}else{if(o.type==='asteroid'){o.mesh.rotation.x+=dt*o.spin;o.mesh.rotation.z+=dt*o.spin*.7;}if(o.type==='enemy'){flyEnemy(o,dt);o.fire-=dt;if(o.fire<0&&p.z<-8&&p.z>-85&&!(selectedMap==='island'&&terrainFlight.transition)){launchEnemyMissile(o);o.fire=Math.max(.9,2.5-level*.12);}}if(playerHitsObject(o)){damage();if(mode==='over')return;}}if(p.z>25)removeObject(i);}
+ for(let i=shots.length-1;i>=0;i--){
+  const s=shots[i];if(s.kind==='tracking')continue;
+  s.mesh.position.z+=travelStep;const previous=s.mesh.position.clone();
+  s.mesh.position.addScaledVector(s.vel,dt);s.life-=dt;
+  const impact=projectileHit(previous,s.mesh.position),ground=terrainFlight.worldGroundHit(s.mesh.position);
+  if(impact){if(impact.target?.type==='enemy')damageEnemy(impact.target,1,impact.position);else particleBurst(impact.position,0xffb66c,2);}
+  if(impact||ground||s.life<=0){world.remove(s.mesh);shots.splice(i,1);}
+ }
+
  for(let i=shots.length-1;i>=0;i--){
   const s=shots[i];if(s.kind!=='tracking')continue;
-  if(updateTrackingMissile(s,dt)||terrainFlight.groundHit(s.mesh.position)){world.remove(s.mesh);shots.splice(i,1);}
+  if(updateTrackingMissile(s,dt,travelStep)||terrainFlight.worldGroundHit(s.mesh.position)){world.remove(s.mesh);shots.splice(i,1);}
  }
- for(let i=hostile.length-1;i>=0;i--){const b=hostile[i];b.mesh.position.addScaledVector(b.vel,dt);b.life-=dt;if(terrainFlight.groundHit(b.mesh.position))b.life=0;b.age+=dt;animateEnemyMissile(b.mesh,b.age,b.flamePhase);if(b.life>0&&b.mesh.position.distanceTo(new T.Vector3(player.x,player.y,player.z))<.9){damage();b.life=0;if(mode==='over')return;}if(b.life<=0||b.mesh.position.z>30){world.remove(b.mesh);hostile.splice(i,1);}}
+ for(let i=hostile.length-1;i>=0;i--){
+  const b=hostile[i];b.mesh.position.z+=travelStep;const previous=b.mesh.position.clone();
+  b.mesh.position.addScaledVector(b.vel,dt);b.life-=dt;
+  if(terrainFlight.worldGroundHit(b.mesh.position))b.life=0;
+  b.age+=dt;animateEnemyMissile(b.mesh,b.age,b.flamePhase);
+  const playerWorld=terrainFlight.point(new T.Vector3(player.x,player.y,player.z),new T.Vector3());
+  const segment=new T.Line3(previous,b.mesh.position),closest=segment.closestPointToPoint(playerWorld,true,new T.Vector3());
+  if(b.life>0&&closest.distanceTo(playerWorld)<.9){damage();b.life=0;if(mode==='over')return;}
+  if(b.life<=0||b.mesh.position.z>30){world.remove(b.mesh);hostile.splice(i,1);}
+ }
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.mesh.position.addScaledVector(e.vel,dt);e.mesh.material.opacity=Math.max(0,e.life);if(e.life<=0){world.remove(e.mesh);e.mesh.material.dispose();effects.splice(i,1);}}
  particles.update(dt);cannon.update(dt);
  enemyExplosions.update(dt,travelStep/dt,camera);
