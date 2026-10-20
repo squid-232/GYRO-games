@@ -57,7 +57,13 @@ async function material(name,info){
 async function model(name,info){
  if(!modelCache.has(name))modelCache.set(name,(async()=>{
   const def=info.models[name];if(!def)throw Error(`缺少海岛模型 ${name}`);
-  const buffer=await fetchFile(def.file,true),interleaved=new T.InterleavedBuffer(new Float32Array(buffer,0,def.vertices*8),8);
+  const buffer=await fetchFile(def.file,true);
+  if(buffer.byteLength!==def.vertices*32+def.indices*4||def.indices%3!==0||
+   def.groups.some(g=>g.start%3!==0||g.count%3!==0||g.start<0||g.count<0||g.start+g.count>def.indices)||
+   def.groups.reduce((sum,g)=>sum+g.count,0)!==def.indices){
+   throw Error(`海岛模型索引数据不完整：${name}，请更新模型和 manifest.json 后重试`);
+  }
+  const interleaved=new T.InterleavedBuffer(new Float32Array(buffer,0,def.vertices*8),8);
   const indices=new Uint32Array(buffer,def.vertices*32,def.indices);
   return Promise.all(def.groups.map(async group=>{
    const geometry=new T.BufferGeometry();
@@ -154,7 +160,8 @@ export function createNotionIslands(parent,shores,seaLevel){
   if(current?.id===id)return;
   loading=(async()=>{
    const info=await manifest(),data=await fetchFile(`${id}/layout.json`);
-   prepareObstacle(await model('Rock_SeaStack_low',info));
+   // Collision obstacles pass close to the camera; keep the complete source surface and UVs.
+   prepareObstacle(await model('Rock_SeaStack',info));
    const [raw,map]=await Promise.all([fetchFile(`${id}/height.r16`,true),texture(`${id}/color.webp`,true)]);
    data.heights=new Uint16Array(raw);if(data.heights.length!==257*257)throw Error('海岛地形数据长度错误');
    // Uniformly sample the source placement list; do not retain only its first corner.

@@ -35,6 +35,9 @@ def clustered_lod(vertices, indices, groups, target):
             faces=faces[(faces[:,0]!=faces[:,1])&(faces[:,1]!=faces[:,2])&(faces[:,0]!=faces[:,2])]
             if not len(faces):continue
             used,compact=np.unique(faces,return_inverse=True)
+            # NumPy 2 preserves the input shape of inverse indices. The binary
+            # format and material draw ranges count scalar indices, not faces.
+            compact=compact.reshape(-1)
             out_groups.append({'material':group['material'],'start':len(triangles),'count':len(compact)})
             triangles.extend((compact+len(packed)).tolist());packed.extend(merged[used].tolist())
         result=(packed,triangles,out_groups)

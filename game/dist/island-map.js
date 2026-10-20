@@ -169,7 +169,7 @@ const stackGeometry=(()=>{
 })();
 const stackFoam=new T.MeshBasicMaterial({color:0x8fbfb6,transparent:true,opacity:.25,depthWrite:false});
 const foamGeometry=new T.TorusGeometry(1,.075,4,32);foamGeometry.rotateX(Math.PI/2);
-export function createSeaStack(x,y,z,r) {
+export function createSeaStack(x,y,z,r=1.8) {
   const group=new T.Group();group.position.set(x,y,z);
   const top=y+r, height=top-SEA_LEVEL;
   const body=createImportedSeaStack()||new T.Mesh(stackGeometry,stone);body.position.y=SEA_LEVEL-y;body.scale.set(r,height,r);group.add(body);
