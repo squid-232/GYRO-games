@@ -43,11 +43,7 @@
     <div class="title-kicker" data-text="SKYSTRIKE" aria-hidden="true">SKYSTRIKE</div><h1 class="combat-title" aria-label="苍穹突击"><span class="title-steel" aria-hidden="true" data-text="苍穹">苍穹</span><span class="title-ember" aria-hidden="true" data-text="突击">突击</span></h1>
     <div class="mission-rule"><span id="missionType">海岛空域 / 空中拦截</span><b id="areaCode">01—AO</b></div>
     <div class="map-select" role="group" aria-label="选择战场"><button id="mapIsland" class="map-option" aria-pressed="false"><span class="map-symbol island-symbol" aria-hidden="true"></span><span><small>01 / MARITIME</small>群岛战区</span></button><button id="mapSpace" class="map-option" aria-pressed="true"><span class="map-symbol orbit-symbol" aria-hidden="true"></span><span><small>02 / ORBITAL</small>轨道禁区</span></button></div>
-    <div id="islandRegionPanel" class="island-region hidden">
-      <img id="islandMinimap" width="64" height="64" alt="当前海岛地形缩略图">
-      <div><div class="island-route-label">联合战区 <span>ALL SECTORS</span></div><strong class="island-route-title">全域随机航线 · 9 类地形</strong><small id="islandRegionDescription"></small></div>
-    </div>
-    <p id="introText">穿越随机组合的九类海岛地形。<br>收集补给，规避礁柱，突破空中封锁。</p>
+    <p id="introText">掠海突围，爬升飞越海岛。<br>穿过导航环领取奖励，迎击空中目标。</p>
     <div class="features"><span><b>01</b> 收集摩拉</span><span><b>02</b> 规避障碍</span><span><b>03</b> Q 跟踪导弹</span></div>
     <button id="start" class="primary" disabled>正在装载战机 <span>↗</span></button>
     <p class="best">最佳战绩 <b id="best">000000</b><span>PERSONAL RECORD</span></p>
@@ -59,4 +55,5 @@
 <section id="endOverlay" class="modal hidden"><div><span class="eyebrow">AFTER ACTION / 作战报告</span><h2>任务结束</h2><div id="report"></div><button id="restart" class="primary">再次出击 ↗</button><button id="endLobby" class="lobby-button">返回大厅 / 切换战场</button></div></section>
 <footer><div class="controls"><span><kbd>W A S D</kbd> / <kbd>↑ ↓ ← →</kbd> 移动</span><span><kbd>SPACE</kbd> 开火</span><span><kbd>F</kbd> 切换模式</span></div><div class="weapon-controls"><button id="missileSkill" class="missile-skill" type="button" disabled title="Q：冷启动跟踪导弹 · 12 秒冷却" aria-label="冷启动跟踪导弹，出击后可用，快捷键 Q"><kbd>Q</kbd><span class="missile-copy"><b>冷启动跟踪导弹</b><span id="missileStatus">出击后可用</span></span><span class="missile-meter" aria-hidden="true"><i id="missileProgress"></i></span></button><button id="fireMode" aria-pressed="true">自动开火 <span>ON</span></button></div><span id="controlHint" class="footer-id">蓝牙倾斜移动 · 空格开火 · P 暂停</span></footer>
 <div id="touch"><div id="stick" aria-label="拖动控制飞机"><div id="thumb"></div></div><button id="touchFire" aria-label="按住开火">FIRE</button></div>
+<div id="flightObjective" class="flight-objective hidden" role="status"></div>
 <div id="loadError" class="hidden" role="alert"></div></main><script type="module" src="lifecycle.js"></script><script type="module" src="game.js"></script></body></html>

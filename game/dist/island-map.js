@@ -187,7 +187,7 @@ export function createIslandMap(scene) {
     time.value=elapsed;sea.material.uniforms.uDistance.value=distance;imported.update(distance,elapsed);
   }
   return {root,update,reset:()=>{imported.reset();update(0,0);},get ready(){return imported.ready;},
-    get region(){return imported.region;},get loaded(){return imported.loaded;},prepareGPU:imported.prepareGPU,
+    flyover:imported.flyover,get region(){return imported.region;},get loaded(){return imported.loaded;},prepareGPU:imported.prepareGPU,
     renderReflection:reflection.render,setQuality(profile){reflection.setQuality(profile);imported.setQuality(profile);},
     dispose(){reflection.dispose();imported.dispose();}};
 }

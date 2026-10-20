@@ -10,6 +10,7 @@ import { createSpaceplane, updateSpaceplane } from './spaceplane-model.js';
 import { createEnemyAircraft, ENEMY_EXTENTS } from './enemy-model.js';
 import { createEnemyMissile, createPlayerMissile, animateEnemyMissile } from './missile-model.js';
 import { createIslandMap, createSeaStack } from './island-map.js';
+import {createTerrainFlight} from './terrain-flight.js';
 import {ISLAND_REGIONS} from './notion-islands.js';
 import { createMoraCoin } from './coin-model.js';
 import { createEnemyExplosions } from './explosion-effect.js';
@@ -69,12 +70,16 @@ islandMap.root.addEventListener('regionchange',updateIslandRegionUI);
 islandMap.root.addEventListener('terrainprogress',event=>{if(battlefieldPreparing)$('start').textContent=`正在准备地形 ${event.loaded}/${event.total}`;});
 function updateIslandRegionUI(){
  const region=ISLAND_REGIONS.find(r=>r.id===islandMap.region);
- $('islandRegionDescription').textContent=`前方：${region.name} · ${region.description}`;
- $('islandMinimap').src=`./assets/notion-islands/${region.id}/minimap.webp`;
  if(selectedMap==='island'){$('theaterName').textContent='全域群岛';$('missionLocation').textContent=`MARITIME / ${region.name}`;}
 }
 let spaceMap,activeMap=islandMap,selectedMap='space',islandAircraft,spaceAircraft,waveIndex=0,battlefieldPreparing=false;
 try{const saved=localStorage.getItem('gyro-skystrike-map');if(saved==='island'||saved==='space')selectedMap=saved;}catch{}
+const terrainFlight=createTerrainFlight(islandMap,world,camera,{
+ onEnter:name=>notice(`${name} · 飞越航段，操控战机穿过浅绿色导航环`),
+ onRing:()=>{score+=150;tone(1500,.15);particleBurst(new T.Vector3(player.x,player.y,player.z),0xc8e8c3,9);},
+ onFinish:hits=>{if(hits===3){score+=300;notice('完美飞越 · 额外 +300');}else notice(`飞越完成 · 导航环 ${hits}/3`);}
+});
+window.addEventListener('pagehide',()=>terrainFlight.dispose(),{once:true});
 function selectMap(kind){
  if(mode!=='menu'&&mode!=='loading')return;
  selectedMap=kind==='island'?'island':'space';const orbital=selectedMap==='space';
@@ -83,7 +88,7 @@ function selectMap(kind){
  applyGraphicsQuality();if(orbital)sun.target.position.set(0,0,0);
  if(orbital&&!spaceMap)spaceMap=createSpaceMap(scene);
  islandMap.root.visible=!orbital;if(spaceMap)spaceMap.root.visible=orbital;
- activeMap=orbital?spaceMap:islandMap;activeMap.reset();
+ activeMap=orbital?spaceMap:islandMap;activeMap.reset();terrainFlight.reset();
  // The flight transform belongs to the carrier group, preserving the Xuan Nv
  // model's calibrated internal XYZ proportions when menu/flight scale changes.
  if(islandAircraft)islandAircraft.visible=!orbital;
@@ -100,12 +105,11 @@ function selectMap(kind){
  sun.color.setHex(orbital?0xffebd0:0xffe8c4);sun.intensity=orbital?3.2:3.3;sun.position.set(orbital?-78:-32,orbital?48:38,orbital?39:-45);
  rim.color.setHex(orbital?0x7fa4c4:0xb5e4ff);rim.intensity=orbital?.85:1.8;
  document.body.dataset.map=selectedMap;
- $('islandRegionPanel').classList.toggle('hidden',orbital);
  $('mapIsland').setAttribute('aria-pressed',String(!orbital));$('mapSpace').setAttribute('aria-pressed',String(orbital));
  $('missionLocation').textContent=orbital?'ORBITAL EXCLUSION / 轨道禁区':'ARCHIPELAGO / 群岛战区';
  $('operationLabel').textContent=orbital?'OPERATION 02 / 轨道':'OPERATION 01 / 群岛';
  $('missionType').textContent=orbital?'近地轨道 / 残骸突围':'海岛空域 / 空中拦截';$('areaCode').textContent=orbital?'02—AO':'01—AO';
- $('introText').innerHTML=orbital?'驾驶玄女空天战机，突破轨道封锁。<br>避开小行星，穿过蓝色环框，迎击敌机。':'穿越随机组合的九类海岛地形。<br>收集补给，规避礁柱，突破空中封锁。';
+ $('introText').innerHTML=orbital?'驾驶玄女空天战机，突破轨道封锁。<br>避开小行星，穿过蓝色环框，迎击敌机。':'掠海突围，爬升飞越海岛。<br>穿过导航环领取奖励，迎击空中目标。';
  $('theaterName').textContent=orbital?'轨道禁区':'群岛战区';$('theaterEnglish').textContent=orbital?'ORBITAL INTERDICTION':'MARITIME INTERDICTION';$('theaterCode').textContent=orbital?'AO / 02':'AO / 01';
  $('heightLabel').textContent=orbital?'OFFSET / 航道高度':'ALT / 高度';$('heightUnit').textContent=orbital?'REL. METERS':'METERS';
  $('tacticalRadar').setAttribute('aria-label',orbital?'前方敌机、残骸、环框与补给位置':'前方敌机、礁柱与补给位置');
@@ -286,9 +290,9 @@ function updateTrackingMissile(s,dt){
  return false;
 }
 function clearList(list){if(list===effects){enemyExplosions.clear();particles.clear();cannon.clear();}for(const o of list){world.remove(o.mesh);if(o.ownedMaterial)o.mesh.material.dispose();if(o.ownedEdges){o.ownedEdges.geometry.dispose();o.ownedEdges.material.dispose();}}list.length=0;}
-function reset(){if(!permitFlight())return;resetMissileSkill();for(const list of [objects,shots,hostile,effects])clearList(list);hp=5;score=coins=kills=distance=elapsed=0;activeMap.reset();waveIndex=0;level=1;speed=26;invuln=2;spawnTimer=.8;shotTimer=0;shake=0;player.x=0;player.y=5;keys.clear();touch.x=touch.y=0;touch.fire=false;mode='playing';document.body.classList.add('playing');$('overlay').classList.add('hidden');$('pauseOverlay').classList.add('hidden');$('endOverlay').classList.add('hidden');$('pause').disabled=false;aircraft.visible=true;aircraft.scale.setScalar(.24);aircraft.rotation.set(0,0,0);camera.position.set(0,11,22);$('hitflash').style.opacity=0;for(let i=0;i<7;i++)addCoin(Math.sin(i*.4)*.5,5,-28-i*3);addRock(-6,5,-57,1.8);addEnemy(0,5,-90);if(selectedMap==='space')addGate(0,6.5,-150);notice(selectedMap==='space'?'轨道禁区 · 穿越蓝色环框，避开残骸':'进入群岛战区 · 沿金币航线穿越礁柱');updateHUD();tone(600,.2);}
+function reset(){if(!permitFlight())return;resetMissileSkill();for(const list of [objects,shots,hostile,effects])clearList(list);hp=5;score=coins=kills=distance=elapsed=0;activeMap.reset();terrainFlight.reset();waveIndex=0;level=1;speed=26;invuln=2;spawnTimer=.8;shotTimer=0;shake=0;player.x=0;player.y=5;keys.clear();touch.x=touch.y=0;touch.fire=false;mode='playing';document.body.classList.add('playing');$('overlay').classList.add('hidden');$('pauseOverlay').classList.add('hidden');$('endOverlay').classList.add('hidden');$('pause').disabled=false;aircraft.visible=true;aircraft.scale.setScalar(.24);aircraft.rotation.set(0,0,0);camera.position.set(0,11,22);$('hitflash').style.opacity=0;for(let i=0;i<7;i++)addCoin(Math.sin(i*.4)*.5,5,-28-i*3);addRock(-6,5,-57,1.8);addEnemy(0,5,-90);if(selectedMap==='space')addGate(0,6.5,-150);notice(selectedMap==='space'?'轨道禁区 · 穿越蓝色环框，避开残骸':'进入群岛战区 · 跟随航线飞越海岛，穿环得分');updateHUD();tone(600,.2);}
 let lastHUDAt=-Infinity;
-function updateHUD(now=-Infinity){if(Number.isFinite(now)&&now-lastHUDAt<100)return;lastHUDAt=now;$('score').textContent=String(Math.floor(score)).padStart(6,'0');$('coins').textContent=coins;[...$('health').children].forEach((e,i)=>e.classList.toggle('empty',i>=hp));$('sector').textContent=String(level).padStart(2,'0');$('speed').textContent=`${Math.round(speed*27.7)} KM/H`;$('alt').textContent=Math.round(selectedMap==='space'?player.y*10:1600+player.y*160);}
+function updateHUD(now=-Infinity){if(Number.isFinite(now)&&now-lastHUDAt<100)return;lastHUDAt=now;$('score').textContent=String(Math.floor(score)).padStart(6,'0');$('coins').textContent=coins;[...$('health').children].forEach((e,i)=>e.classList.toggle('empty',i>=hp));$('sector').textContent=String(level).padStart(2,'0');$('speed').textContent=`${Math.round(speed*27.7)} KM/H`;$('alt').textContent=Math.round(selectedMap==='space'?player.y*10:1600+(player.y+terrainFlight.state.y)*160);}
 function end(){mode='over';document.body.classList.remove('playing');$('pause').disabled=true;const newBest=score>best;best=Math.max(best,Math.floor(score));try{localStorage.setItem('gyro-skystrike-best',best);}catch{}$('best').textContent=String(best).padStart(6,'0');$('report').innerHTML=`任务得分 <b>${Math.floor(score)}</b><br>拾取摩拉 <b>${coins}</b><br>击毁目标 <b>${kills}</b><br>飞行距离 <b>${(distance/1000).toFixed(2)} km</b><br>${newBest?'新纪录':'历史最佳'} <b>${best}</b>`;$('endOverlay').classList.remove('hidden');tone(100,.6,'sawtooth',.045);}
 function pause(){if(mode==='playing'){$('pauseReason').textContent='准备好后继续任务。';mode='paused';keys.clear();touch.fire=false;touch.x=touch.y=0;$('thumb').style.transform='';$('pauseOverlay').classList.remove('hidden');document.body.classList.remove('playing');}else if(mode==='paused'){if(!permitFlight()){$('pauseReason').textContent=gyro.pauseMessage;return;}mode='playing';$('pauseOverlay').classList.add('hidden');document.body.classList.add('playing');}}
 function returnLobby(){
@@ -298,7 +302,7 @@ function returnLobby(){
  for(const list of [objects,shots,hostile,effects])clearList(list);
  resetMissileSkill();
  keys.clear();touch.x=touch.y=0;touch.fire=false;$('thumb').style.transform='';
- hp=5;score=coins=kills=distance=elapsed=0;activeMap.reset();waveIndex=0;level=1;speed=26;invuln=spawnTimer=shotTimer=shake=noticeTimer=0;
+ hp=5;score=coins=kills=distance=elapsed=0;activeMap.reset();terrainFlight.reset();waveIndex=0;level=1;speed=26;invuln=spawnTimer=shotTimer=shake=noticeTimer=0;
  player.x=0;player.y=5;mode='menu';menuTime=0;
  document.body.classList.remove('playing');$('pause').disabled=true;
  $('pauseOverlay').classList.add('hidden');$('endOverlay').classList.add('hidden');$('overlay').classList.remove('hidden');
@@ -311,7 +315,7 @@ function toggleFire(){autoFire=!autoFire;$('fireMode').innerHTML=`${autoFire?'�
 function particleBurst(pos,color,count=16){particles.burst(pos,color,count);}
 function damage(){if(invuln>0||mode!=='playing')return;hp--;invuln=1.7;shake=.4;tone(80,.25,'sawtooth',.08);particleBurst(new T.Vector3(player.x,player.y,player.z),0xffa765,10);notice(hp<=2?'机体受损 · 注意闪避':'受到撞击 · 护盾恢复中');if(hp<=0){end();updateHUD();}}
 function addCoin(x,y,z){const mesh=createMoraCoin();mesh.position.set(x,y,z);world.add(mesh);objects.push({type:'coin',mesh,r:.9});}
-function addRock(x,y,z,r=1.8){const obstacle=selectedMap==='space'?createOrbitalObstacle(x,y,z,r,waveIndex):{type:'rock',...createSeaStack(x,y,z,r)};world.add(obstacle.mesh);objects.push(obstacle);}
+function addRock(x,y,z,r=1.8){if(selectedMap==='island'&&!terrainFlight.seaObstacles)return;const obstacle=selectedMap==='space'?createOrbitalObstacle(x,y,z,r,waveIndex):{type:'rock',...createSeaStack(x,y,z,r)};if(selectedMap==='island')Object.assign(obstacle,{anchorX:x+world.position.x,anchorY:y+world.position.y,anchorTop:obstacle.top+world.position.y,anchorBottom:obstacle.bottom+world.position.y});world.add(obstacle.mesh);objects.push(obstacle);}
 function addGate(x,y,z){const gate=createOrbitalGate(x,y,z);world.add(gate.mesh);objects.push(gate);}
 function shotHitsObject(o,shot){
  const p=o.mesh.position,x=shot.mesh.position.x,y=shot.mesh.position.y;
@@ -368,8 +372,11 @@ function tick(dt,motion=gyro.sample(dt)){if(mode!=='playing'||(gyro.selected&&!g
  const dx=motion?motion.x:(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
  const dy=motion?motion.y:(keys.has('KeyW')||keys.has('ArrowUp')?1:0)-(keys.has('KeyS')||keys.has('ArrowDown')?1:0)+touch.y;
  player.x=clamp(player.x+clamp(dx,-1,1)*12*dt,-range.x,range.x);player.y=clamp(player.y+clamp(dy,-1,1)*9*dt,range.yMin,range.yMax);
- aircraft.position.set(player.x,player.y,player.z);aircraft.rotation.z=T.MathUtils.damp(aircraft.rotation.z,-dx*.32,8,dt);aircraft.rotation.x=T.MathUtils.damp(aircraft.rotation.x,dy*.12,8,dt);aircraft.visible=invuln>0?Math.floor(invuln*12)%2===0:true;
- camera.position.lerp(new T.Vector3(player.x*.38,player.y+6,22),1-Math.exp(-5*dt));camera.lookAt(player.x*.45,player.y+1,-24);if(shake){camera.position.x+=(Math.random()-.5)*shake;camera.position.y+=(Math.random()-.5)*shake;}
+ activeMap.update(distance,elapsed);
+ const flight=terrainFlight.update(distance,player,selectedMap==='island');
+ for(const o of objects)if(o.type==='rock'){o.mesh.position.x=o.anchorX-flight.x;o.mesh.position.y=o.anchorY-flight.y;o.top=o.anchorTop-flight.y;o.bottom=o.anchorBottom-flight.y;}
+ aircraft.position.set(player.x+flight.x,player.y+flight.y,player.z);aircraft.rotation.z=T.MathUtils.damp(aircraft.rotation.z,-dx*.32+flight.bank,8,dt);aircraft.rotation.x=T.MathUtils.damp(aircraft.rotation.x,dy*.12+flight.climb,8,dt);aircraft.visible=invuln>0?Math.floor(invuln*12)%2===0:true;
+ terrainFlight.aimCamera(dt,player);if(shake){camera.position.x+=(Math.random()-.5)*shake;camera.position.y+=(Math.random()-.5)*shake;}
  spawnTimer-=dt;if(spawnTimer<=0){spawn();spawnTimer=Math.max(1.6,3.4-level*.15);}shotTimer-=dt;if((autoFire||keys.has('Space')||touch.fire)&&shotTimer<=0){fire();shotTimer=.14;}
  for(let i=shots.length-1;i>=0;i--){const s=shots[i];if(s.kind==='tracking')continue;s.prevZ=s.mesh.position.z;s.mesh.position.z-=115*dt;s.life-=dt;let hit=false;for(let j=objects.length-1;j>=0;j--){const o=objects[j];if(o.type==='coin')continue;const p=o.mesh.position;if(shotHitsObject(o,s)){hit=true;if(o.type==='enemy')damageEnemy(o,1,s.mesh.position);else particleBurst(s.mesh.position,0xffb66c,2);break;}}if(hit||s.life<=0){world.remove(s.mesh);shots.splice(i,1);}}
  for(let i=objects.length-1;i>=0;i--){const o=objects[i];const p=o.mesh.position;p.z+=speed*dt;if(o.type==='coin'){o.mesh.rotation.y+=dt*2.8;if(Math.hypot(p.x-player.x,p.y-player.y)<1.3&&Math.abs(p.z-player.z)<1.8){coins++;score+=25;tone(1300,.09,'sine',.025);particleBurst(p,0xffd16b,5);removeObject(i);continue;}}else{if(o.type==='asteroid'){o.mesh.rotation.x+=dt*o.spin;o.mesh.rotation.z+=dt*o.spin*.7;}if(o.type==='enemy'){p.x=clamp(o.baseX+Math.sin(elapsed*1.2+o.phase)*(elapsed<8?.35:1.8),-10,10);o.mesh.rotation.z=Math.cos(elapsed*1.2+o.phase)*.16;o.fire-=dt;if(o.fire<0&&p.z<-8&&p.z>-85){launchEnemyMissile(o);o.fire=Math.max(.9,2.5-level*.12);}}if(playerHitsObject(o)){damage();if(mode==='over')return;}}if(p.z>25)removeObject(i);}
@@ -381,7 +388,6 @@ function tick(dt,motion=gyro.sample(dt)){if(mode!=='playing'||(gyro.selected&&!g
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.mesh.position.addScaledVector(e.vel,dt);e.mesh.material.opacity=Math.max(0,e.life);if(e.life<=0){world.remove(e.mesh);e.mesh.material.dispose();effects.splice(i,1);}}
  particles.update(dt);cannon.update(dt);
  enemyExplosions.update(dt,speed,camera);
- activeMap.update(distance,elapsed);
  return true;}
 async function prepareCombatRendering(){
  const warmup=new T.Group();warmup.name='Combat material warmup';warmup.visible=false;

@@ -241,7 +241,7 @@ export function createNotionIslands(parent,shores,seaLevel){
    addInstances(details,assets.get(name),list,category);addInstances(lowDetails,lowAssets.get(name),list,category);
   }
   for(const mesh of data.meshes)for(const part of assets.get(mesh.model))group.add(new T.Mesh(part.geometry,part.material));
-  regions.set(id,{id,group,land,details,lowDetails,foam,geometries,ground,coast,coastGeometry});parent.add(group);shores.push(foam);parent.dispatchEvent({type:'terrainprogress',loaded:regions.size,total:ISLAND_REGIONS.length});
+  regions.set(id,{id,data,group,land,details,lowDetails,foam,geometries,ground,coast,coastGeometry});parent.add(group);shores.push(foam);parent.dispatchEvent({type:'terrainprogress',loaded:regions.size,total:ISLAND_REGIONS.length});
  }
  async function prepare(){
   if(loading)return loading;if(regions.size===ISLAND_REGIONS.length)return;
@@ -259,22 +259,32 @@ export function createNotionIslands(parent,shores,seaLevel){
  function assign(slot,id){
   if(slot.region)slot.region.group.visible=false;
   slot.region=regions.get(id);const g=slot.region.group;g.visible=true;
-  // The whole 500 m tile stays outside the playable corridor at every rotation.
+  // Scenic tiles flank the sea lane; a designated tile receives a flyover route.
   g.position.set(slot.side*(72+Math.random()*6),seaLevel,slot.startZ);
   g.rotation.y=slot.side*Math.PI/2+(Math.random()-.5)*.12;
+  if(slot.flyover){
+   // Sample the full wing/steering corridor in the rotated source heightfield.
+   const c=Math.cos(g.rotation.y),s=Math.sin(g.rotation.y);let peak=seaLevel;
+   for(let z=-64;z<=64;z+=2)for(let x=-15;x<=15;x+=3){
+    const lx=(c*x-s*z)/SCALE,lz=(s*x+c*z)/SCALE;
+    if(Math.abs(lx)<slot.region.data.size/2&&Math.abs(lz)<slot.region.data.size/2)
+     peak=Math.max(peak,seaLevel+heightAt(slot.region.data,lx,lz)*SCALE);
+   }
+   slot.lift=Math.max(0,peak+5);
+  }
  }
  function reset(){
   if(regions.size!==ISLAND_REGIONS.length)return;
   for(const region of regions.values())region.group.visible=false;
   slots.length=0;bag=[];lastRegion='';const used=new Set();
-  for(let i=0;i<4;i++){const slot={side:i%2?1:-1,startZ:-42-i*130};const id=nextRegion(used);used.add(id);assign(slot,id);slots.push(slot);}
+  for(let i=0;i<4;i++){const slot={side:i%2?1:-1,flyover:i===2,startZ:-42-i*130};const id=nextRegion(used);used.add(id);assign(slot,id);slots.push(slot);}
   update(0,0);
  }
  function update(distance,elapsed){
   clock.value=elapsed;for(const item of animatedTextures)item.map.offset.set(elapsed*item.x,elapsed*item.y);
   for(const slot of slots){
-   while(slot.startZ+distance>120){
-    const used=new Set(slots.map(s=>s.region.id));slot.startZ-=PERIOD;assign(slot,nextRegion(used));
+   while(slot.startZ+distance>(slot.flyover?190:120)){
+    const used=new Set(slots.map(s=>s.region.id));slot.startZ-=PERIOD;if(slot.flyover)slot.side*=-1;assign(slot,nextRegion(used));
    }
    const tile=slot.region,z=slot.startZ+distance;tile.group.position.z=z;
    const near=z>-(quality===2?230:170)&&z<100;
@@ -300,7 +310,13 @@ export function createNotionIslands(parent,shores,seaLevel){
   for(const texture of textures)renderer.initTexture(texture);
   gpuReady=true;
  }
- return {update,reset,prepareGPU,get ready(){return prepare();},get region(){return focus;},get loaded(){return regions.size===ISLAND_REGIONS.length;},
+ function flyover(distance){
+  const slot=slots.find(s=>s.flyover);if(!slot)return null;
+  const phase=distance-(7-slot.startZ);
+  return {key:`${slot.startZ}:${slot.region.id}`,phase,x:slot.region.group.position.x,lift:slot.lift,
+   name:ISLAND_REGIONS.find(r=>r.id===slot.region.id).name};
+ }
+ return {update,reset,prepareGPU,flyover,get ready(){return prepare();},get region(){return focus;},get loaded(){return regions.size===ISLAND_REGIONS.length;},
   setQuality(profile){quality=profile.reflectionSize>512?2:profile.shadows?1:0;},
   dispose(){
    disposed=true;slots.length=0;if(obstacleWarmup)parent.remove(obstacleWarmup);
