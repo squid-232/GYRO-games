@@ -65,12 +65,13 @@ const particles=createParticleSystem(world,geo.particle);
 window.addEventListener('pagehide',()=>particles.dispose(),{once:true});
 const islandMap=createIslandMap(scene);
 window.addEventListener('pagehide',()=>islandMap.dispose(),{once:true});
-for(const region of ISLAND_REGIONS){const option=document.createElement('option');option.value=region.id;option.textContent=region.name;$('islandRegion').append(option);}
+islandMap.root.addEventListener('regionchange',updateIslandRegionUI);
+islandMap.root.addEventListener('terrainprogress',event=>{if(battlefieldPreparing)$('start').textContent=`正在准备地形 ${event.loaded}/${event.total}`;});
 function updateIslandRegionUI(){
  const region=ISLAND_REGIONS.find(r=>r.id===islandMap.region);
- $('islandRegion').value=region.id;$('islandRegionDescription').textContent=region.description;
+ $('islandRegionDescription').textContent=`前方：${region.name} · ${region.description}`;
  $('islandMinimap').src=`./assets/notion-islands/${region.id}/minimap.webp`;
- if(selectedMap==='island'){$('theaterName').textContent=region.name;$('missionLocation').textContent=`MARITIME / ${region.name}`;}
+ if(selectedMap==='island'){$('theaterName').textContent='全域群岛';$('missionLocation').textContent=`MARITIME / ${region.name}`;}
 }
 let spaceMap,activeMap=islandMap,selectedMap='space',islandAircraft,spaceAircraft,waveIndex=0,battlefieldPreparing=false;
 try{const saved=localStorage.getItem('gyro-skystrike-map');if(saved==='island'||saved==='space')selectedMap=saved;}catch{}
@@ -104,7 +105,7 @@ function selectMap(kind){
  $('missionLocation').textContent=orbital?'ORBITAL EXCLUSION / 轨道禁区':'ARCHIPELAGO / 群岛战区';
  $('operationLabel').textContent=orbital?'OPERATION 02 / 轨道':'OPERATION 01 / 群岛';
  $('missionType').textContent=orbital?'近地轨道 / 残骸突围':'海岛空域 / 空中拦截';$('areaCode').textContent=orbital?'02—AO':'01—AO';
- $('introText').innerHTML=orbital?'驾驶玄女空天战机，突破轨道封锁。<br>避开小行星，穿过蓝色环框，迎击敌机。':'低空突入群岛，突破敌方封锁。<br>沿航线收集补给，规避礁柱，清除空中威胁。';
+ $('introText').innerHTML=orbital?'驾驶玄女空天战机，突破轨道封锁。<br>避开小行星，穿过蓝色环框，迎击敌机。':'穿越随机组合的九类海岛地形。<br>收集补给，规避礁柱，突破空中封锁。';
  $('theaterName').textContent=orbital?'轨道禁区':'群岛战区';$('theaterEnglish').textContent=orbital?'ORBITAL INTERDICTION':'MARITIME INTERDICTION';$('theaterCode').textContent=orbital?'AO / 02':'AO / 01';
  $('heightLabel').textContent=orbital?'OFFSET / 航道高度':'ALT / 高度';$('heightUnit').textContent=orbital?'REL. METERS':'METERS';
  $('tacticalRadar').setAttribute('aria-label',orbital?'前方敌机、残骸、环框与补给位置':'前方敌机、礁柱与补给位置');
@@ -117,11 +118,6 @@ async function chooseBattlefield(kind){
  selectMap(kind);await prepareCurrentBattlefield();
 }
 $('mapIsland').onclick=()=>chooseBattlefield('island');$('mapSpace').onclick=()=>chooseBattlefield('space');
-$('islandRegion').onchange=async()=>{
- if(mode!=='menu'||battlefieldPreparing)return;
- const id=$('islandRegion').value;
- await prepareCurrentBattlefield(()=>islandMap.setRegion(id));updateIslandRegionUI();
-};
 selectMap(selectedMap);
 
 let audio;function tone(freq,dur,type='sine',vol=.025){if(muted)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,audio.currentTime);o.frequency.exponentialRampToValueAtTime(Math.max(30,freq*.45),audio.currentTime+dur);g.gain.setValueAtTime(vol,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+dur);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+dur);}catch{}}
@@ -396,22 +392,22 @@ async function prepareCombatRendering(){
  aircraft.position.set(0,5,7);aircraft.scale.setScalar(.24);
  await prepareCurrentBattlefield();
 }
-async function prepareCurrentBattlefield(changeRegion){
+async function prepareCurrentBattlefield(){
  battlefieldPreparing=true;$('start').disabled=true;$('renderQuality').disabled=true;
- $('mapIsland').disabled=$('mapSpace').disabled=$('islandRegion').disabled=true;
+ $('mapIsland').disabled=$('mapSpace').disabled=true;
  $('start').innerHTML='正在准备战场 <span>↗</span>';
  // 只预热当前战场；切换地图时在大厅准备，避免首次进入同时编译两套光照。
  try{
-  if(changeRegion)await changeRegion();
   await activeMap.ready;
+  activeMap.prepareGPU?.(renderer);
   $('loadError').classList.add('hidden');
   updateAircraftShadows();renderer.render(scene,camera);
   await renderer.compileAsync(scene,camera);
   if(selectedMap==='island')await activeMap.renderReflection(renderer,scene,camera,performance.now(),true);
  }catch(error){
-  $('loadError').classList.remove('hidden');$('loadError').textContent=`战场准备失败：${error.message}。可重新选择区域重试。`;
+  $('loadError').classList.remove('hidden');$('loadError').textContent=`战场准备失败：${error.message}。可重新点击群岛战区重试。`;
  }finally{
-  battlefieldPreparing=false;$('renderQuality').disabled=false;$('mapIsland').disabled=$('mapSpace').disabled=$('islandRegion').disabled=false;
+  battlefieldPreparing=false;$('renderQuality').disabled=false;$('mapIsland').disabled=$('mapSpace').disabled=false;
   if(mode==='menu'){$('start').disabled=selectedMap==='island'&&!islandMap.loaded;$('start').innerHTML=$('start').disabled?'资源尚未就绪':'开始出击 <span>↗</span>';}
  }
 }
